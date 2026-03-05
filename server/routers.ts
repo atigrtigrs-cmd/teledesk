@@ -20,6 +20,8 @@ import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
 import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds } from "./telegram";
 
+const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -619,26 +621,76 @@ export const appRouter = router({
 
   // ─── LeadCash Bot Integration ────────────────────────────────────────────────
   leadcashBot: router({
+
     groups: protectedProcedure.query(async () => {
-      const res = await fetch("https://telegram-bitrix-bot-b4kx.onrender.com/api/groups");
+      const res = await fetch(`${BOT_BASE}/api/groups`);
       if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot API unavailable" });
       return res.json() as Promise<Record<string, any>>;
     }),
     categories: protectedProcedure.query(async () => {
-      const res = await fetch("https://telegram-bitrix-bot-b4kx.onrender.com/api/categories");
+      const res = await fetch(`${BOT_BASE}/api/categories`);
       if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot API unavailable" });
       return res.json() as Promise<Record<string, any>>;
     }),
     logs: protectedProcedure.query(async () => {
-      const res = await fetch("https://telegram-bitrix-bot-b4kx.onrender.com/api/logs");
+      const res = await fetch(`${BOT_BASE}/api/logs`);
       if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot API unavailable" });
       return res.json() as Promise<Record<string, any>>;
     }),
     admins: protectedProcedure.query(async () => {
-      const res = await fetch("https://telegram-bitrix-bot-b4kx.onrender.com/api/admins");
+      const res = await fetch(`${BOT_BASE}/api/admins`);
       if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot API unavailable" });
       return res.json() as Promise<Record<string, any>>;
     }),
+    templates: protectedProcedure.query(async () => {
+      const res = await fetch(`${BOT_BASE}/api/templates`);
+      if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot API unavailable" });
+      return res.json() as Promise<Record<string, any>>;
+    }),
+    // Approve a pending group — set its category
+    approveGroup: protectedProcedure
+      .input(z.object({
+        chatId: z.string(),
+        category: z.string(),
+        lang: z.string().default("ru"),
+      }))
+      .mutation(async ({ input }) => {
+        const res = await fetch(`${BOT_BASE}/api/groups/approve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: input.chatId, category: input.category, lang: input.lang }),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { success: res.ok, data };
+      }),
+    // Remove a group from bot
+    removeGroup: protectedProcedure
+      .input(z.object({ chatId: z.string() }))
+      .mutation(async ({ input }) => {
+        const res = await fetch(`${BOT_BASE}/api/groups/remove`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: input.chatId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { success: res.ok, data };
+      }),
+    // Update a template
+    updateTemplate: protectedProcedure
+      .input(z.object({
+        key: z.string(),
+        ru: z.string(),
+        en: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const res = await fetch(`${BOT_BASE}/api/templates/update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: input.key, ru: input.ru, en: input.en }),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { success: res.ok, data };
+      }),
   }),
 });
 

@@ -31,3 +31,9 @@
 - [x] Add tRPC procedures bitrix.getPipelines, bitrix.getPipelineStages, bitrix.getUsers
 - [x] Add "Воронка Битрикс24" modal in Accounts page with pipeline/stage/responsible selectors
 - [ ] Use per-account pipeline when creating deals in Bitrix24 (pending: deal creation logic)
+
+## Native Bot Admin Panel (replace iframe)
+- [ ] Explore all bot API endpoints (admins, templates, chats, moderation actions)
+- [ ] Add tRPC proxy procedures for all missing bot endpoints
+- [ ] Rebuild LeadCashBot page: Overview, Moderation, Groups, Categories, Admins, Templates, Logs, Chats tabs — all native in TeleDesk dark design
+- [ ] Remove iframe tab
