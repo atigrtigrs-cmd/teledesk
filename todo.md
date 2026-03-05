@@ -8,7 +8,7 @@
 
 ## Phase 3: Core UI
 - [x] Landing page (public, lead-cash.com style)
-- [x] Auth (Manus OAuth)
+- [x] Auth (email/password with JWT)
 - [x] Sidebar navigation
 - [x] Inbox page — unified list of all dialogs from all Telegram accounts
 - [x] Telegram Accounts page — connect/disconnect accounts (QR code flow UI)
@@ -40,15 +40,23 @@
 
 ## Phase 7: Tests & Delivery
 - [x] Vitest unit tests for server routers (7 tests passing)
-- [ ] Checkpoint save
+- [x] Checkpoint save
 - [x] Deploy to GitHub + Render (https://github.com/atigrtigrs-cmd/teledesk, https://teledesk.onrender.com)
 - [x] Deliver to user
 
 ## Auth Fix (Standalone Render Deploy)
-- [ ] Replace Manus OAuth with email/password auth (bcrypt + JWT)
-- [ ] Add Login page with email/password form
-- [ ] Add Register page (first user becomes admin)
-- [ ] Update server auth routes (POST /api/auth/login, /api/auth/register, /api/auth/me)
-- [ ] Update useAuth hook to work with custom JWT cookie
-- [ ] Remove Manus OAuth dependency from frontend const.ts
-- [ ] Deploy updated code to Render
+- [x] Replace Manus OAuth with email/password auth (bcrypt + JWT)
+- [x] Add Login page with email/password form
+- [x] Add Register page (first user becomes admin)
+- [x] Update server auth routes via tRPC (auth.login, auth.register, auth.me, auth.logout)
+- [x] Update useAuth hook to work with custom JWT cookie
+- [x] Remove Manus OAuth dependency from frontend (DashboardLayout, main.tsx)
+- [x] Deploy updated code to Render
+
+## QR Code Enhancement
+- [x] Install qrcode.react for real QR code rendering
+- [x] Update Accounts page to show real Telegram QR code
+- [x] Auto-refresh QR on expiry
+- [x] Poll for account becoming active after scan
+- [x] Fix @import order in index.css
+- [x] Align COOKIE_NAME in shared/const.ts (all 7 tests passing)
