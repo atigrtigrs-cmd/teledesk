@@ -20,7 +20,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
   BarChart3,
@@ -84,7 +83,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </p>
           </div>
           <Button
-            onClick={() => { window.location.href = getLoginUrl(); }}
+            onClick={() => { window.location.href = '/login'; }}
             size="lg"
             className="w-full font-semibold shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-shadow"
           >

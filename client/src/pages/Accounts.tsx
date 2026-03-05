@@ -25,9 +25,11 @@ import {
   RefreshCw,
   MessageSquare,
   Wifi,
+  Loader2,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
+import { QRCodeSVG } from "qrcode.react";
 
 const statusConfig: Record<string, { label: string; dot: string; badge: string }> = {
   active: {
@@ -52,9 +54,28 @@ const statusConfig: Record<string, { label: string; dot: string; badge: string }
   },
 };
 
+// Convert base64 token to tg://login?token=... URL
+function buildTelegramQRUrl(tokenBase64: string): string {
+  // Convert base64 to hex
+  const bytes = atob(tokenBase64);
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes.charCodeAt(i).toString(16).padStart(2, "0");
+  }
+  return `tg://login?token=${hex}`;
+}
+
 export default function Accounts() {
   const [showQR, setShowQR] = useState(false);
+  const [pendingAccountId, setPendingAccountId] = useState<number | null>(null);
+  const [qrToken, setQrToken] = useState<string | null>(null);
+  const [qrExpires, setQrExpires] = useState<number | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrExpired, setQrExpired] = useState(false);
+
   const { data: accounts, refetch } = trpc.accounts.list.useQuery();
+  const utils = trpc.useUtils();
+
   const deleteMutation = trpc.accounts.delete.useMutation({
     onSuccess: () => { toast.success("Аккаунт удалён"); refetch(); },
   });
@@ -62,8 +83,90 @@ export default function Accounts() {
     onSuccess: () => { toast.success("Статус обновлён"); refetch(); },
   });
   const createMutation = trpc.accounts.create.useMutation({
-    onSuccess: () => { toast.success("Аккаунт добавлен!"); refetch(); setShowQR(false); },
+    onSuccess: (acc) => {
+      refetch();
+      setPendingAccountId(acc.id);
+    },
   });
+  const startQRMutation = trpc.accounts.startQRLogin.useMutation({
+    onSuccess: (data) => {
+      setQrToken(data.token);
+      setQrExpires(data.expires);
+      setQrExpired(false);
+      setQrLoading(false);
+    },
+    onError: (err) => {
+      toast.error("Ошибка запуска QR: " + err.message);
+      setQrLoading(false);
+    },
+  });
+
+  // Start QR login when pendingAccountId is set
+  useEffect(() => {
+    if (pendingAccountId !== null) {
+      setQrLoading(true);
+      setQrToken(null);
+      startQRMutation.mutate({ accountId: pendingAccountId });
+    }
+  }, [pendingAccountId]);
+
+  // Check QR expiry
+  useEffect(() => {
+    if (!qrExpires) return;
+    const now = Math.floor(Date.now() / 1000);
+    const remaining = qrExpires - now;
+    if (remaining <= 0) {
+      setQrExpired(true);
+      return;
+    }
+    const timer = setTimeout(() => setQrExpired(true), remaining * 1000);
+    return () => clearTimeout(timer);
+  }, [qrExpires]);
+
+  // Poll for account becoming active
+  useEffect(() => {
+    if (!pendingAccountId || !showQR) return;
+    const interval = setInterval(async () => {
+      await refetch();
+      const acc = accounts?.find(a => a.id === pendingAccountId);
+      if (acc?.status === "active") {
+        toast.success(`Telegram аккаунт ${acc.firstName ?? acc.phone ?? ""} подключён!`);
+        setShowQR(false);
+        setPendingAccountId(null);
+        setQrToken(null);
+        clearInterval(interval);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [pendingAccountId, showQR, accounts]);
+
+  const handleOpenQR = () => {
+    setShowQR(true);
+    setPendingAccountId(null);
+    setQrToken(null);
+    setQrExpired(false);
+  };
+
+  const handleCloseQR = () => {
+    setShowQR(false);
+    setPendingAccountId(null);
+    setQrToken(null);
+    setQrExpired(false);
+  };
+
+  const handleStartQR = () => {
+    createMutation.mutate({ status: "pending" });
+  };
+
+  const handleRefreshQR = () => {
+    if (pendingAccountId) {
+      setQrLoading(true);
+      setQrExpired(false);
+      startQRMutation.mutate({ accountId: pendingAccountId });
+    }
+  };
+
+  const qrUrl = qrToken ? buildTelegramQRUrl(qrToken) : null;
 
   return (
     <DashboardLayout>
@@ -74,7 +177,7 @@ export default function Accounts() {
             <p className="text-xs font-black text-primary tracking-widest uppercase mb-1">Интеграция</p>
             <h1 className="text-2xl font-black tracking-tight">Telegram аккаунты</h1>
           </div>
-          <Button onClick={() => setShowQR(true)} className="gap-2 font-bold shadow shadow-primary/25">
+          <Button onClick={handleOpenQR} className="gap-2 font-bold shadow shadow-primary/25">
             <Plus className="h-4 w-4" />
             Добавить аккаунт
           </Button>
@@ -109,7 +212,7 @@ export default function Accounts() {
             <p className="text-sm text-muted-foreground mb-6 max-w-xs">
               Добавьте Telegram аккаунт через QR-код, чтобы начать получать сообщения
             </p>
-            <Button onClick={() => setShowQR(true)} className="gap-2 font-bold shadow shadow-primary/25">
+            <Button onClick={handleOpenQR} className="gap-2 font-bold shadow shadow-primary/25">
               <QrCode className="h-4 w-4" />
               Подключить через QR
             </Button>
@@ -187,7 +290,7 @@ export default function Accounts() {
         )}
 
         {/* QR Connect Dialog */}
-        <Dialog open={showQR} onOpenChange={setShowQR}>
+        <Dialog open={showQR} onOpenChange={handleCloseQR}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
               <DialogTitle className="font-black">Подключить Telegram</DialogTitle>
@@ -196,12 +299,39 @@ export default function Accounts() {
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col items-center gap-5 py-4">
-              {/* QR Code placeholder */}
-              <div className="h-48 w-48 rounded-2xl border-2 border-dashed border-primary/30 flex flex-col items-center justify-center gap-3 bg-primary/5">
-                <QrCode className="h-16 w-16 text-primary/40" />
-                <p className="text-xs text-muted-foreground text-center px-4">
-                  QR-код появится после подключения бэкенда
-                </p>
+              {/* QR Code area */}
+              <div className="relative h-52 w-52 rounded-2xl border-2 border-primary/20 flex flex-col items-center justify-center gap-3 bg-white overflow-hidden">
+                {qrLoading && (
+                  <div className="absolute inset-0 bg-white/90 flex items-center justify-center z-10">
+                    <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                  </div>
+                )}
+                {qrExpired && !qrLoading && (
+                  <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center z-10 gap-2">
+                    <p className="text-xs text-gray-500 font-medium">QR-код истёк</p>
+                    <Button size="sm" variant="outline" onClick={handleRefreshQR} className="text-xs">
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Обновить
+                    </Button>
+                  </div>
+                )}
+                {qrUrl && !qrExpired ? (
+                  <QRCodeSVG
+                    value={qrUrl}
+                    size={200}
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                    level="M"
+                    includeMargin={false}
+                  />
+                ) : !qrLoading && !pendingAccountId ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <QrCode className="h-12 w-12 text-gray-300" />
+                    <p className="text-xs text-gray-400 text-center px-4">
+                      Нажмите «Начать» для генерации QR-кода
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               <div className="w-full space-y-2.5">
@@ -220,17 +350,45 @@ export default function Accounts() {
               </div>
 
               <div className="flex gap-2 w-full">
-                <Button variant="outline" className="flex-1" onClick={() => setShowQR(false)}>
+                <Button variant="outline" className="flex-1" onClick={handleCloseQR}>
                   Отмена
                 </Button>
-                <Button
-                  className="flex-1 font-bold"
-                  onClick={() => createMutation.mutate({ status: "active", firstName: "Тестовый", phone: "+7 999 000 00 00" })}
-                  disabled={createMutation.isPending}
-                >
-                  {createMutation.isPending ? "Добавление..." : "Добавить (демо)"}
-                </Button>
+                {!pendingAccountId ? (
+                  <Button
+                    className="flex-1 font-bold"
+                    onClick={handleStartQR}
+                    disabled={createMutation.isPending}
+                  >
+                    {createMutation.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Создание...</>
+                    ) : (
+                      <>
+                        <QrCode className="h-4 w-4 mr-2" />
+                        Начать
+                      </>
+                    )}
+                  </Button>
+                ) : (
+                  <Button
+                    className="flex-1 font-bold"
+                    onClick={handleRefreshQR}
+                    disabled={qrLoading}
+                    variant="outline"
+                  >
+                    {qrLoading ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Загрузка...</>
+                    ) : (
+                      <><RefreshCw className="h-4 w-4 mr-2" />Обновить QR</>
+                    )}
+                  </Button>
+                )}
               </div>
+
+              {pendingAccountId && !qrLoading && qrUrl && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Ожидание сканирования... Страница обновится автоматически
+                </p>
+              )}
             </div>
           </DialogContent>
         </Dialog>
