@@ -33,10 +33,10 @@
 - [ ] Use per-account pipeline when creating deals in Bitrix24 (pending: deal creation logic)
 
 ## Native Bot Admin Panel (replace iframe)
-- [ ] Explore all bot API endpoints (admins, templates, chats, moderation actions)
-- [ ] Add tRPC proxy procedures for all missing bot endpoints
-- [ ] Rebuild LeadCashBot page: Overview, Moderation, Groups, Categories, Admins, Templates, Logs, Chats tabs — all native in TeleDesk dark design
-- [ ] Remove iframe tab
+- [x] Explore all bot API endpoints (admins, templates, chats, moderation actions)
+- [x] Add tRPC proxy procedures for all bot endpoints
+- [x] Rebuild LeadCashBot page: Overview, Moderation, Groups, Categories, Admins, Templates, Logs, Broadcast tabs — all native in TeleDesk dark design
+- [x] Remove iframe tab
 
 ## Bot Admin Panel — Edit Functionality
 - [x] Groups tab: edit category and language per group
@@ -61,7 +61,9 @@
 - [x] Add links to getdesktop.telegram.org and web.telegram.org in the dialog
 
 ## Phone Number Login (alternative to QR)
-- [ ] Add tRPC procedure: accounts.sendPhoneCode (send SMS/Telegram code via GramJS)
-- [ ] Add tRPC procedure: accounts.verifyPhoneCode (verify code, handle 2FA password)
-- [ ] Add phone login UI: phone input step → code input step → optional 2FA password step
-- [ ] Show both options in Accounts page: "По QR-коду" and "По номеру телефона"
+- [x] Add tRPC procedure: accounts.sendPhoneCode (send SMS/Telegram code via GramJS)
+- [x] Add tRPC procedure: accounts.verifyPhoneCode (verify code, handle 2FA password)
+- [x] Add tRPC procedure: accounts.verifyTwoFA (2FA cloud password)
+- [x] Add phone login functions to telegram.ts (startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword)
+- [x] Add phone login UI: choose mode screen → phone input → SMS code → optional 2FA password
+- [x] Show both options in Accounts page: "По номеру телефона" and "QR-код"
