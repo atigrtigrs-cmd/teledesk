@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
+import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
 import {
   ArrowLeft,
   Send,
@@ -19,6 +20,8 @@ import {
   ExternalLink,
   ChevronDown,
   Sparkles,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
@@ -50,14 +53,11 @@ export default function DialogDetail() {
 
   const prevMsgCountRef = useRef(0);
 
-  const { data: dialogData, refetch: refetchDialog } = trpc.dialogs.get.useQuery(
-    { id: dialogId },
-    { refetchInterval: 3000 } // poll every 3 s
-  );
-  const { data: msgs, refetch: refetchMsgs } = trpc.messages.list.useQuery(
-    { dialogId },
-    { refetchInterval: 2000 } // poll every 2 s for real-time messages
-  );
+  // SSE real-time — no polling, instant updates
+  const { connectionState } = useRealtimeInbox(dialogId);
+
+  const { data: dialogData, refetch: refetchDialog } = trpc.dialogs.get.useQuery({ id: dialogId });
+  const { data: msgs, refetch: refetchMsgs } = trpc.messages.list.useQuery({ dialogId });
   const { data: quickReplies } = trpc.quickReplies.list.useQuery();
 
   const sendMutation = trpc.messages.send.useMutation({
@@ -122,6 +122,15 @@ export default function DialogDetail() {
               {contact?.username ? `@${contact.username}` : contact?.phone ?? "—"}
               {account && ` · @${account.username ?? account.phone}`}
             </p>
+            {connectionState === "connected" ? (
+              <span className="inline-flex items-center gap-1 text-[10px] text-green-400">
+                <Wifi className="h-2.5 w-2.5" /> Live
+              </span>
+            ) : connectionState === "disconnected" ? (
+              <span className="inline-flex items-center gap-1 text-[10px] text-orange-400">
+                <WifiOff className="h-2.5 w-2.5" /> Оффлайн
+              </span>
+            ) : null}
           </div>
 
           {/* Status dropdown */}

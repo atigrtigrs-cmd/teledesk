@@ -12,6 +12,7 @@ import { telegramAccounts, dialogs, messages, contacts, Dialog } from "../drizzl
 import { eq, and } from "drizzle-orm";
 import { createBitrixDeal, addBitrixTimelineComment } from "./bitrix";
 import { invokeLLM } from "./_core/llm";
+import { emitInboxEvent } from "./sse";
 
 const TELEGRAM_API_ID = parseInt(process.env.TELEGRAM_API_ID ?? "36272545");
 const TELEGRAM_API_HASH = process.env.TELEGRAM_API_HASH ?? "c287b0998fac419b776486e511f364fc";
@@ -239,6 +240,14 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
       telegramMessageId: tgMsgId,
       createdAt: new Date(Number(msg.date) * 1000),
     });
+
+    // ── 4. Push real-time SSE event to all connected browser clients ───────
+    const isNewDialog = openDialogs.length === 0;
+    emitInboxEvent(
+      isNewDialog
+        ? { type: "new_dialog", dialogId, accountId }
+        : { type: "new_message", dialogId, accountId }
+    );
 
     console.log(`[Telegram] New message in dialog #${dialogId}: "${text.substring(0, 50)}"`);
   } catch (err) {

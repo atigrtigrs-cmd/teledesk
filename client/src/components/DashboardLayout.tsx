@@ -21,6 +21,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
+import { trpc } from "@/lib/trpc";
 import {
   BarChart3,
   Bot,
@@ -121,6 +122,13 @@ function DashboardLayoutContent({
   const isMobile = useIsMobile();
   const activeMenuItem = menuItems.find(item => location.startsWith(item.path));
 
+  // SSE-driven unread count — refreshed by useRealtimeInbox invalidations
+  const { data: unreadData } = trpc.dialogs.list.useQuery(
+    { status: "open" },
+    { enabled: !!user }
+  );
+  const totalUnread = unreadData?.reduce((sum, d) => sum + (d.dialog.unreadCount ?? 0), 0) ?? 0;
+
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
   }, [isCollapsed]);
@@ -182,6 +190,7 @@ function DashboardLayoutContent({
             <SidebarMenu className="px-2 gap-0.5">
               {menuItems.map(item => {
                 const isActive = location.startsWith(item.path);
+                const showBadge = item.path === "/inbox" && totalUnread > 0;
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
@@ -195,7 +204,12 @@ function DashboardLayoutContent({
                       }`}
                     >
                       <item.icon className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : ""}`} />
-                      <span>{item.label}</span>
+                      <span className="flex-1">{item.label}</span>
+                      {showBadge && (
+                        <span className="ml-auto h-5 min-w-5 px-1.5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-black shadow shadow-primary/30">
+                          {totalUnread > 99 ? "99+" : totalUnread}
+                        </span>
+                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

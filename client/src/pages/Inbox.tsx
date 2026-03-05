@@ -1,10 +1,13 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
+import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
 import {
   MessageSquare,
   Search,
   Loader2,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -58,9 +61,11 @@ export default function Inbox() {
   const [search, setSearch] = useState("");
   const [, setLocation] = useLocation();
 
+  // SSE real-time connection — no polling needed
+  const { connectionState } = useRealtimeInbox();
+
   const { data, isLoading } = trpc.dialogs.list.useQuery(
-    { status: statusFilter, search: search || undefined },
-    { refetchInterval: 3000 } // poll every 3 s for real-time updates
+    { status: statusFilter, search: search || undefined }
   );
 
   return (
@@ -73,9 +78,27 @@ export default function Inbox() {
               <p className="text-xs font-black text-primary tracking-widest uppercase mb-1">Сообщения</p>
               <h1 className="text-2xl font-black tracking-tight">Входящие</h1>
             </div>
-            <span className="text-xs font-bold text-muted-foreground bg-muted px-3 py-1.5 rounded-full border border-border">
-              {data?.length ?? 0} диалогов
-            </span>
+            <div className="flex items-center gap-2">
+              {connectionState === "connected" ? (
+                <span className="flex items-center gap-1.5 text-xs font-medium text-green-400 bg-green-500/10 px-2.5 py-1 rounded-full border border-green-500/20">
+                  <Wifi className="h-3 w-3" />
+                  Live
+                </span>
+              ) : connectionState === "connecting" ? (
+                <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-full border border-border">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Подключение...
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-xs font-medium text-orange-400 bg-orange-500/10 px-2.5 py-1 rounded-full border border-orange-500/20">
+                  <WifiOff className="h-3 w-3" />
+                  Оффлайн
+                </span>
+              )}
+              <span className="text-xs font-bold text-muted-foreground bg-muted px-3 py-1.5 rounded-full border border-border">
+                {data?.length ?? 0} диалогов
+              </span>
+            </div>
           </div>
 
           {/* Search */}
