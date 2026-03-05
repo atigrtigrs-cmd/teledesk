@@ -18,7 +18,7 @@ import { eq, desc, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
-import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds } from "./telegram";
+import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword } from "./telegram";
 import { ENV } from "./_core/env";
 
 const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
@@ -145,6 +145,39 @@ export const appRouter = router({
         await db.update(telegramAccounts).set(fields).where(eq(telegramAccounts.id, id));
         const [acc] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, id)).limit(1);
         return acc;
+      }),
+
+    sendPhoneCode: protectedProcedure
+      .input(z.object({ accountId: z.number(), phone: z.string().min(7) }))
+      .mutation(async ({ input }) => {
+        try {
+          const result = await startPhoneLogin(input.accountId, input.phone);
+          return { success: true, phoneCodeHash: result.phoneCodeHash };
+        } catch (err: any) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err?.message ?? "Failed to send code" });
+        }
+      }),
+
+    verifyPhoneCode: protectedProcedure
+      .input(z.object({ accountId: z.number(), phone: z.string(), code: z.string().min(4) }))
+      .mutation(async ({ input }) => {
+        try {
+          const result = await verifyPhoneCode(input.accountId, input.phone, input.code);
+          return result;
+        } catch (err: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err?.message ?? "Invalid code" });
+        }
+      }),
+
+    verifyTwoFA: protectedProcedure
+      .input(z.object({ accountId: z.number(), password: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        try {
+          await verifyTwoFAPassword(input.accountId, input.password);
+          return { success: true };
+        } catch (err: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err?.message ?? "Invalid 2FA password" });
+        }
       }),
   }),
 

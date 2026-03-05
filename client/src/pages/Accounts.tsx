@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
 import {
   CheckCircle2,
@@ -27,11 +28,11 @@ import {
   Wifi,
   Loader2,
   Settings2,
-  ChevronDown,
+  Phone,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -58,9 +59,7 @@ const statusConfig: Record<string, { label: string; dot: string; badge: string }
   },
 };
 
-// Convert base64 token to tg://login?token=... URL
 function buildTelegramQRUrl(tokenBase64: string): string {
-  // Convert base64 to hex
   const bytes = atob(tokenBase64);
   let hex = "";
   for (let i = 0; i < bytes.length; i++) {
@@ -69,15 +68,29 @@ function buildTelegramQRUrl(tokenBase64: string): string {
   return `tg://login?token=${hex}`;
 }
 
+type LoginMode = "choose" | "qr" | "phone";
+type PhoneStep = "phone" | "code" | "twofa";
+
 export default function Accounts() {
-  const [showQR, setShowQR] = useState(false);
+  // Dialog state
+  const [showDialog, setShowDialog] = useState(false);
+  const [loginMode, setLoginMode] = useState<LoginMode>("choose");
+
+  // QR state
   const [pendingAccountId, setPendingAccountId] = useState<number | null>(null);
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [qrExpires, setQrExpires] = useState<number | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrExpired, setQrExpired] = useState(false);
 
-  // Bitrix24 pipeline settings per account
+  // Phone login state
+  const [phoneStep, setPhoneStep] = useState<PhoneStep>("phone");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [twoFAPassword, setTwoFAPassword] = useState("");
+  const [phoneAccountId, setPhoneAccountId] = useState<number | null>(null);
+
+  // Bitrix24 settings state
   const [showBitrixModal, setShowBitrixModal] = useState(false);
   const [bitrixAccountId, setBitrixAccountId] = useState<number | null>(null);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
@@ -87,7 +100,6 @@ export default function Accounts() {
   const [selectedResponsibleName, setSelectedResponsibleName] = useState<string>("");
 
   const { data: accounts, refetch } = trpc.accounts.list.useQuery();
-  const utils = trpc.useUtils();
 
   const { data: pipelines = [] } = trpc.bitrix.getPipelines.useQuery(undefined, { enabled: showBitrixModal });
   const { data: stages = [] } = trpc.bitrix.getPipelineStages.useQuery(
@@ -104,6 +116,166 @@ export default function Accounts() {
     },
     onError: (err) => toast.error("Ошибка: " + err.message),
   });
+
+  const deleteMutation = trpc.accounts.delete.useMutation({
+    onSuccess: () => { toast.success("Аккаунт удалён"); refetch(); },
+  });
+  const updateStatusMutation = trpc.accounts.updateStatus.useMutation({
+    onSuccess: () => { toast.success("Статус обновлён"); refetch(); },
+  });
+  const createMutation = trpc.accounts.create.useMutation({
+    onSuccess: (acc) => {
+      setPendingAccountId(acc.id);
+    },
+  });
+  const startQRMutation = trpc.accounts.startQRLogin.useMutation({
+    onSuccess: (data) => {
+      setQrToken(data.token);
+      setQrExpires(data.expires);
+      setQrExpired(false);
+      setQrLoading(false);
+    },
+    onError: (err) => {
+      toast.error("Ошибка запуска QR: " + err.message);
+      setQrLoading(false);
+    },
+  });
+
+  // Phone login mutations
+  const sendCodeMutation = trpc.accounts.sendPhoneCode.useMutation({
+    onSuccess: () => {
+      setPhoneStep("code");
+      toast.success("Код отправлен в Telegram");
+    },
+    onError: (err) => toast.error("Ошибка: " + err.message),
+  });
+  const verifyCodeMutation = trpc.accounts.verifyPhoneCode.useMutation({
+    onSuccess: (data) => {
+      if (data.requiresPassword) {
+        setPhoneStep("twofa");
+        toast.info("Требуется пароль двухфакторной аутентификации");
+      } else {
+        toast.success("Аккаунт успешно подключён!");
+        handleCloseDialog();
+        refetch();
+      }
+    },
+    onError: (err) => toast.error("Неверный код: " + err.message),
+  });
+  const verifyTwoFAMutation = trpc.accounts.verifyTwoFA.useMutation({
+    onSuccess: () => {
+      toast.success("Аккаунт успешно подключён!");
+      handleCloseDialog();
+      refetch();
+    },
+    onError: (err) => toast.error("Неверный пароль: " + err.message),
+  });
+
+  // Start QR when pendingAccountId set
+  useEffect(() => {
+    if (pendingAccountId !== null) {
+      setQrLoading(true);
+      setQrToken(null);
+      startQRMutation.mutate({ accountId: pendingAccountId });
+    }
+  }, [pendingAccountId]);
+
+  // QR expiry timer
+  useEffect(() => {
+    if (!qrExpires) return;
+    const now = Math.floor(Date.now() / 1000);
+    const remaining = qrExpires - now;
+    if (remaining <= 0) { setQrExpired(true); return; }
+    const timer = setTimeout(() => setQrExpired(true), remaining * 1000);
+    return () => clearTimeout(timer);
+  }, [qrExpires]);
+
+  // Poll for account becoming active (QR mode)
+  useEffect(() => {
+    if (!pendingAccountId || !showDialog || loginMode !== "qr") return;
+    const interval = setInterval(async () => {
+      await refetch();
+      const acc = accounts?.find(a => a.id === pendingAccountId);
+      if (acc?.status === "active") {
+        toast.success(`Telegram аккаунт ${acc.firstName ?? acc.phone ?? ""} подключён!`);
+        handleCloseDialog();
+        clearInterval(interval);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [pendingAccountId, showDialog, loginMode, accounts]);
+
+  const handleOpenDialog = () => {
+    setShowDialog(true);
+    setLoginMode("choose");
+    resetPhoneState();
+    setPendingAccountId(null);
+    setQrToken(null);
+    setQrExpired(false);
+  };
+
+  const handleCloseDialog = () => {
+    setShowDialog(false);
+    setLoginMode("choose");
+    resetPhoneState();
+    setPendingAccountId(null);
+    setQrToken(null);
+    setQrExpired(false);
+  };
+
+  const resetPhoneState = () => {
+    setPhoneStep("phone");
+    setPhoneNumber("");
+    setPhoneCode("");
+    setTwoFAPassword("");
+    setPhoneAccountId(null);
+  };
+
+  const handleStartQR = () => {
+    setLoginMode("qr");
+    createMutation.mutate({ status: "pending" });
+  };
+
+  const handleStartPhone = () => {
+    setLoginMode("phone");
+    setPhoneStep("phone");
+  };
+
+  const handleRefreshQR = () => {
+    if (pendingAccountId) {
+      setQrLoading(true);
+      setQrExpired(false);
+      startQRMutation.mutate({ accountId: pendingAccountId });
+    }
+  };
+
+  const handleSendCode = async () => {
+    if (!phoneNumber.trim()) return;
+    // Create account first if not yet created
+    if (!phoneAccountId) {
+      createMutation.mutate(
+        { phone: phoneNumber, status: "pending" },
+        {
+          onSuccess: (acc) => {
+            setPhoneAccountId(acc.id);
+            sendCodeMutation.mutate({ accountId: acc.id, phone: phoneNumber });
+          },
+        }
+      );
+    } else {
+      sendCodeMutation.mutate({ accountId: phoneAccountId, phone: phoneNumber });
+    }
+  };
+
+  const handleVerifyCode = () => {
+    if (!phoneAccountId || !phoneCode.trim()) return;
+    verifyCodeMutation.mutate({ accountId: phoneAccountId, phone: phoneNumber, code: phoneCode });
+  };
+
+  const handleVerifyTwoFA = () => {
+    if (!phoneAccountId || !twoFAPassword.trim()) return;
+    verifyTwoFAMutation.mutate({ accountId: phoneAccountId, password: twoFAPassword });
+  };
 
   const handleOpenBitrix = (acc: NonNullable<typeof accounts>[0]) => {
     setBitrixAccountId(acc.id);
@@ -127,96 +299,6 @@ export default function Accounts() {
     });
   };
 
-  const deleteMutation = trpc.accounts.delete.useMutation({
-    onSuccess: () => { toast.success("Аккаунт удалён"); refetch(); },
-  });
-  const updateStatusMutation = trpc.accounts.updateStatus.useMutation({
-    onSuccess: () => { toast.success("Статус обновлён"); refetch(); },
-  });
-  const createMutation = trpc.accounts.create.useMutation({
-    onSuccess: (acc) => {
-      refetch();
-      setPendingAccountId(acc.id);
-    },
-  });
-  const startQRMutation = trpc.accounts.startQRLogin.useMutation({
-    onSuccess: (data) => {
-      setQrToken(data.token);
-      setQrExpires(data.expires);
-      setQrExpired(false);
-      setQrLoading(false);
-    },
-    onError: (err) => {
-      toast.error("Ошибка запуска QR: " + err.message);
-      setQrLoading(false);
-    },
-  });
-
-  // Start QR login when pendingAccountId is set
-  useEffect(() => {
-    if (pendingAccountId !== null) {
-      setQrLoading(true);
-      setQrToken(null);
-      startQRMutation.mutate({ accountId: pendingAccountId });
-    }
-  }, [pendingAccountId]);
-
-  // Check QR expiry
-  useEffect(() => {
-    if (!qrExpires) return;
-    const now = Math.floor(Date.now() / 1000);
-    const remaining = qrExpires - now;
-    if (remaining <= 0) {
-      setQrExpired(true);
-      return;
-    }
-    const timer = setTimeout(() => setQrExpired(true), remaining * 1000);
-    return () => clearTimeout(timer);
-  }, [qrExpires]);
-
-  // Poll for account becoming active
-  useEffect(() => {
-    if (!pendingAccountId || !showQR) return;
-    const interval = setInterval(async () => {
-      await refetch();
-      const acc = accounts?.find(a => a.id === pendingAccountId);
-      if (acc?.status === "active") {
-        toast.success(`Telegram аккаунт ${acc.firstName ?? acc.phone ?? ""} подключён!`);
-        setShowQR(false);
-        setPendingAccountId(null);
-        setQrToken(null);
-        clearInterval(interval);
-      }
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [pendingAccountId, showQR, accounts]);
-
-  const handleOpenQR = () => {
-    setShowQR(true);
-    setPendingAccountId(null);
-    setQrToken(null);
-    setQrExpired(false);
-  };
-
-  const handleCloseQR = () => {
-    setShowQR(false);
-    setPendingAccountId(null);
-    setQrToken(null);
-    setQrExpired(false);
-  };
-
-  const handleStartQR = () => {
-    createMutation.mutate({ status: "pending" });
-  };
-
-  const handleRefreshQR = () => {
-    if (pendingAccountId) {
-      setQrLoading(true);
-      setQrExpired(false);
-      startQRMutation.mutate({ accountId: pendingAccountId });
-    }
-  };
-
   const qrUrl = qrToken ? buildTelegramQRUrl(qrToken) : null;
 
   return (
@@ -228,7 +310,7 @@ export default function Accounts() {
             <p className="text-xs font-black text-primary tracking-widest uppercase mb-1">Интеграция</p>
             <h1 className="text-2xl font-black tracking-tight">Telegram аккаунты</h1>
           </div>
-          <Button onClick={handleOpenQR} className="gap-2 font-bold shadow shadow-primary/25">
+          <Button onClick={handleOpenDialog} className="gap-2 font-bold shadow shadow-primary/25">
             <Plus className="h-4 w-4" />
             Добавить аккаунт
           </Button>
@@ -261,11 +343,11 @@ export default function Accounts() {
             </div>
             <h3 className="font-black text-lg mb-2">Нет подключённых аккаунтов</h3>
             <p className="text-sm text-muted-foreground mb-6 max-w-xs">
-              Добавьте Telegram аккаунт через QR-код, чтобы начать получать сообщения
+              Добавьте Telegram аккаунт через QR-код или номер телефона
             </p>
-            <Button onClick={handleOpenQR} className="gap-2 font-bold shadow shadow-primary/25">
-              <QrCode className="h-4 w-4" />
-              Подключить через QR
+            <Button onClick={handleOpenDialog} className="gap-2 font-bold shadow shadow-primary/25">
+              <Plus className="h-4 w-4" />
+              Подключить аккаунт
             </Button>
           </div>
         ) : (
@@ -349,6 +431,221 @@ export default function Accounts() {
             })}
           </div>
         )}
+
+        {/* ─── Connect Dialog ─────────────────────────────────────────── */}
+        <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="font-black">Подключить Telegram</DialogTitle>
+              <DialogDescription className="text-xs">
+                Выберите способ входа
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* CHOOSE MODE */}
+            {loginMode === "choose" && (
+              <div className="flex flex-col gap-3 py-2">
+                <button
+                  onClick={handleStartPhone}
+                  className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
+                >
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+                    <Phone className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">По номеру телефона</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Код придёт в Telegram — работает с телефона</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleStartQR}
+                  disabled={createMutation.isPending}
+                  className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all text-left group disabled:opacity-50"
+                >
+                  <div className="h-10 w-10 rounded-xl bg-muted/50 border border-border flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+                    {createMutation.isPending ? (
+                      <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+                    ) : (
+                      <QrCode className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">QR-код</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Только через Telegram Desktop или web.telegram.org</p>
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {/* QR MODE */}
+            {loginMode === "qr" && (
+              <div className="flex flex-col items-center gap-4 py-2">
+                <div className="relative h-52 w-52 rounded-2xl border-2 border-primary/20 flex flex-col items-center justify-center gap-3 bg-white overflow-hidden">
+                  {qrLoading && (
+                    <div className="absolute inset-0 bg-white/90 flex items-center justify-center z-10">
+                      <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                    </div>
+                  )}
+                  {qrExpired && !qrLoading && (
+                    <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center z-10 gap-2">
+                      <p className="text-xs text-gray-500 font-medium">QR-код истёк</p>
+                      <Button size="sm" variant="outline" onClick={handleRefreshQR} className="text-xs">
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Обновить
+                      </Button>
+                    </div>
+                  )}
+                  {qrUrl && !qrExpired ? (
+                    <QRCodeSVG value={qrUrl} size={200} bgColor="#ffffff" fgColor="#000000" level="M" includeMargin={false} />
+                  ) : !qrLoading ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <QrCode className="h-12 w-12 text-gray-300" />
+                      <p className="text-xs text-gray-400 text-center px-4">Генерация QR-кода...</p>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-start gap-2">
+                  <span className="text-amber-400 text-base shrink-0">⚠️</span>
+                  <p className="text-xs text-amber-300 leading-relaxed">
+                    Откройте <strong>Telegram Desktop</strong> или <strong>web.telegram.org</strong> → Настройки → Устройства → Подключить устройство
+                  </p>
+                </div>
+
+                <div className="flex gap-2 w-full">
+                  <Button variant="outline" className="flex-1 text-xs" onClick={() => setLoginMode("choose")}>
+                    ← Назад
+                  </Button>
+                  <Button variant="outline" className="flex-1 text-xs" onClick={handleRefreshQR} disabled={qrLoading}>
+                    {qrLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <><RefreshCw className="h-3 w-3 mr-1" />Обновить</>}
+                  </Button>
+                </div>
+
+                {pendingAccountId && !qrLoading && qrUrl && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    Ожидание сканирования... Страница обновится автоматически
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* PHONE MODE */}
+            {loginMode === "phone" && (
+              <div className="flex flex-col gap-4 py-2">
+                {phoneStep === "phone" && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Номер телефона</Label>
+                      <Input
+                        placeholder="+7 999 123 45 67"
+                        value={phoneNumber}
+                        onChange={e => setPhoneNumber(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && handleSendCode()}
+                        className="font-mono"
+                      />
+                      <p className="text-xs text-muted-foreground">Введите номер в международном формате с +</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1" onClick={() => setLoginMode("choose")}>
+                        ← Назад
+                      </Button>
+                      <Button
+                        className="flex-1 font-bold"
+                        onClick={handleSendCode}
+                        disabled={sendCodeMutation.isPending || createMutation.isPending || !phoneNumber.trim()}
+                      >
+                        {(sendCodeMutation.isPending || createMutation.isPending) ? (
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Отправка...</>
+                        ) : (
+                          <>Получить код</>
+                        )}
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {phoneStep === "code" && (
+                  <>
+                    <div className="rounded-xl bg-green-500/10 border border-green-500/20 p-3 flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" />
+                      <p className="text-xs text-green-300">Код отправлен на номер <strong>{phoneNumber}</strong> в Telegram</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Код из Telegram</Label>
+                      <Input
+                        placeholder="12345"
+                        value={phoneCode}
+                        onChange={e => setPhoneCode(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && handleVerifyCode()}
+                        className="font-mono text-center text-lg tracking-widest"
+                        maxLength={6}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1 text-xs" onClick={() => setPhoneStep("phone")}>
+                        ← Назад
+                      </Button>
+                      <Button
+                        className="flex-1 font-bold"
+                        onClick={handleVerifyCode}
+                        disabled={verifyCodeMutation.isPending || !phoneCode.trim()}
+                      >
+                        {verifyCodeMutation.isPending ? (
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Проверка...</>
+                        ) : (
+                          <>Подтвердить</>
+                        )}
+                      </Button>
+                    </div>
+                    <button
+                      className="text-xs text-primary underline underline-offset-2 text-center"
+                      onClick={handleSendCode}
+                      disabled={sendCodeMutation.isPending}
+                    >
+                      Отправить код повторно
+                    </button>
+                  </>
+                )}
+
+                {phoneStep === "twofa" && (
+                  <>
+                    <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 flex items-start gap-2">
+                      <span className="text-amber-400 shrink-0">🔐</span>
+                      <p className="text-xs text-amber-300">На аккаунте включена двухфакторная аутентификация. Введите облачный пароль Telegram.</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Пароль 2FA</Label>
+                      <Input
+                        type="password"
+                        placeholder="Облачный пароль Telegram"
+                        value={twoFAPassword}
+                        onChange={e => setTwoFAPassword(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && handleVerifyTwoFA()}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1 text-xs" onClick={() => setPhoneStep("code")}>
+                        ← Назад
+                      </Button>
+                      <Button
+                        className="flex-1 font-bold"
+                        onClick={handleVerifyTwoFA}
+                        disabled={verifyTwoFAMutation.isPending || !twoFAPassword.trim()}
+                      >
+                        {verifyTwoFAMutation.isPending ? (
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Проверка...</>
+                        ) : (
+                          <>Войти</>
+                        )}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Bitrix24 Pipeline Settings Dialog */}
         <Dialog open={showBitrixModal} onOpenChange={setShowBitrixModal}>
@@ -441,127 +738,6 @@ export default function Accounts() {
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Сохранение...</>
                 ) : "Сохранить"}
               </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* QR Connect Dialog */}
-        <Dialog open={showQR} onOpenChange={handleCloseQR}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle className="font-black">Подключить Telegram</DialogTitle>
-              <DialogDescription className="text-xs">
-                Сканируйте QR-код через Telegram Desktop или web.telegram.org — мобильное приложение не поддерживается
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex flex-col items-center gap-5 py-4">
-              {/* QR Code area */}
-              <div className="relative h-52 w-52 rounded-2xl border-2 border-primary/20 flex flex-col items-center justify-center gap-3 bg-white overflow-hidden">
-                {qrLoading && (
-                  <div className="absolute inset-0 bg-white/90 flex items-center justify-center z-10">
-                    <Loader2 className="h-8 w-8 text-primary animate-spin" />
-                  </div>
-                )}
-                {qrExpired && !qrLoading && (
-                  <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center z-10 gap-2">
-                    <p className="text-xs text-gray-500 font-medium">QR-код истёк</p>
-                    <Button size="sm" variant="outline" onClick={handleRefreshQR} className="text-xs">
-                      <RefreshCw className="h-3 w-3 mr-1" />
-                      Обновить
-                    </Button>
-                  </div>
-                )}
-                {qrUrl && !qrExpired ? (
-                  <QRCodeSVG
-                    value={qrUrl}
-                    size={200}
-                    bgColor="#ffffff"
-                    fgColor="#000000"
-                    level="M"
-                    includeMargin={false}
-                  />
-                ) : !qrLoading && !pendingAccountId ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <QrCode className="h-12 w-12 text-gray-300" />
-                    <p className="text-xs text-gray-400 text-center px-4">
-                      Нажмите «Начать» для генерации QR-кода
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Warning banner */}
-              <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-start gap-2">
-                <span className="text-amber-400 text-base shrink-0">⚠️</span>
-                <p className="text-xs text-amber-300 leading-relaxed">
-                  <strong>Мобильное приложение Telegram не поддерживает этот QR.</strong>{" "}
-                  Используйте только Telegram Desktop или web.telegram.org
-                </p>
-              </div>
-
-              <div className="w-full space-y-2.5">
-                {[
-                  { text: "Откройте Telegram Desktop на компьютере", link: "https://getdesktop.telegram.org", linkText: "Скачать" },
-                  { text: "Или войдите через браузер: web.telegram.org", link: "https://web.telegram.org", linkText: "Открыть" },
-                  { text: "Настройки → Устройства → Подключить устройство", link: null, linkText: null },
-                  { text: "Наведите камеру на QR-код выше", link: null, linkText: null },
-                ].map((step, i) => (
-                  <div key={i} className="flex items-start gap-2.5">
-                    <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-black shrink-0 mt-0.5">
-                      {i + 1}
-                    </div>
-                    <span className="text-sm flex-1">
-                      {step.text}
-                      {step.link && (
-                        <a href={step.link} target="_blank" rel="noopener noreferrer" className="ml-1.5 text-primary underline underline-offset-2 text-xs font-semibold">
-                          {step.linkText} →
-                        </a>
-                      )}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex gap-2 w-full">
-                <Button variant="outline" className="flex-1" onClick={handleCloseQR}>
-                  Отмена
-                </Button>
-                {!pendingAccountId ? (
-                  <Button
-                    className="flex-1 font-bold"
-                    onClick={handleStartQR}
-                    disabled={createMutation.isPending}
-                  >
-                    {createMutation.isPending ? (
-                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Создание...</>
-                    ) : (
-                      <>
-                        <QrCode className="h-4 w-4 mr-2" />
-                        Начать
-                      </>
-                    )}
-                  </Button>
-                ) : (
-                  <Button
-                    className="flex-1 font-bold"
-                    onClick={handleRefreshQR}
-                    disabled={qrLoading}
-                    variant="outline"
-                  >
-                    {qrLoading ? (
-                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Загрузка...</>
-                    ) : (
-                      <><RefreshCw className="h-4 w-4 mr-2" />Обновить QR</>
-                    )}
-                  </Button>
-                )}
-              </div>
-
-              {pendingAccountId && !qrLoading && qrUrl && (
-                <p className="text-xs text-muted-foreground text-center">
-                  Ожидание сканирования... Страница обновится автоматически
-                </p>
-              )}
             </div>
           </DialogContent>
         </Dialog>

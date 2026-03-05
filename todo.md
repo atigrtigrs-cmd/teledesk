@@ -59,3 +59,9 @@
 ## QR Code Login UX Fix
 - [x] Add clear instructions in QR dialog: scan only from Telegram Desktop or web.telegram.org (not mobile app)
 - [x] Add links to getdesktop.telegram.org and web.telegram.org in the dialog
+
+## Phone Number Login (alternative to QR)
+- [ ] Add tRPC procedure: accounts.sendPhoneCode (send SMS/Telegram code via GramJS)
+- [ ] Add tRPC procedure: accounts.verifyPhoneCode (verify code, handle 2FA password)
+- [ ] Add phone login UI: phone input step → code input step → optional 2FA password step
+- [ ] Show both options in Accounts page: "По QR-коду" and "По номеру телефона"
