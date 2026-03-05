@@ -528,6 +528,30 @@ export const appRouter = router({
         return { success: true };
       }),
   }),
+
+  // ─── LeadCash Bot Integration ────────────────────────────────────────────────
+  leadcashBot: router({
+    groups: protectedProcedure.query(async () => {
+      const res = await fetch("https://telegram-bitrix-bot-b4kx.onrender.com/api/groups");
+      if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot API unavailable" });
+      return res.json() as Promise<Record<string, any>>;
+    }),
+    categories: protectedProcedure.query(async () => {
+      const res = await fetch("https://telegram-bitrix-bot-b4kx.onrender.com/api/categories");
+      if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot API unavailable" });
+      return res.json() as Promise<Record<string, any>>;
+    }),
+    logs: protectedProcedure.query(async () => {
+      const res = await fetch("https://telegram-bitrix-bot-b4kx.onrender.com/api/logs");
+      if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot API unavailable" });
+      return res.json() as Promise<Record<string, any>>;
+    }),
+    admins: protectedProcedure.query(async () => {
+      const res = await fetch("https://telegram-bitrix-bot-b4kx.onrender.com/api/admins");
+      if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot API unavailable" });
+      return res.json() as Promise<Record<string, any>>;
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

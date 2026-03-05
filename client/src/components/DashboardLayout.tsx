@@ -27,6 +27,7 @@ import {
   LogOut,
   MessageSquare,
   PanelLeft,
+  Radio,
   Settings,
   Smartphone,
   User,
@@ -43,6 +44,7 @@ const menuItems = [
   { icon: BarChart3, label: "Аналитика", path: "/analytics" },
   { icon: Zap, label: "Быстрые ответы", path: "/quick-replies" },
   { icon: Bot, label: "Автоответы", path: "/auto-replies" },
+  { icon: Radio, label: "LeadCash Bot", path: "/bot" },
   { icon: Settings, label: "Настройки", path: "/settings" },
 ];
 

@@ -14,6 +14,7 @@ import QuickReplies from "./pages/QuickReplies";
 import AutoReplies from "./pages/AutoReplies";
 import Settings from "./pages/Settings";
 import DialogDetail from "./pages/DialogDetail";
+import LeadCashBot from "./pages/LeadCashBot";
 
 function Router() {
   return (
@@ -28,6 +29,7 @@ function Router() {
       <Route path="/quick-replies" component={QuickReplies} />
       <Route path="/auto-replies" component={AutoReplies} />
       <Route path="/settings" component={Settings} />
+      <Route path="/bot" component={LeadCashBot} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

@@ -60,3 +60,9 @@
 - [x] Poll for account becoming active after scan
 - [x] Fix @import order in index.css
 - [x] Align COOKIE_NAME in shared/const.ts (all 7 tests passing)
+
+## LeadCash Bot Integration
+- [x] Add tRPC proxy procedures for bot API (groups, categories, logs, admins)
+- [x] Create LeadCashBot page with Groups / Pending / Logs tabs
+- [x] Add "LeadCash Bot" entry to sidebar navigation
+- [x] Register /bot route in App.tsx
