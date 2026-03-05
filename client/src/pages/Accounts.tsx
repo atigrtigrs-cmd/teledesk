@@ -356,11 +356,13 @@ export default function Accounts() {
               const status = statusConfig[acc.status] ?? statusConfig.disconnected;
               const displayName = [acc.firstName, acc.lastName].filter(Boolean).join(" ") || acc.phone || "Аккаунт";
               const initial = displayName.charAt(0).toUpperCase();
+              const hasEmployee = !!acc.bitrixResponsibleName;
 
               return (
                 <div key={acc.id} className={`bg-card border rounded-xl p-5 transition-all ${
                   acc.status === "active" ? "border-border" : "border-border/50"
                 }`}>
+                  {/* Header row */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className="relative">
@@ -389,7 +391,7 @@ export default function Accounts() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleOpenBitrix(acc)}>
                             <Settings2 className="mr-2 h-4 w-4" />
-                            Воронка Битрикс24
+                            Настройки Битрикс24
                           </DropdownMenuItem>
                           {acc.status === "disconnected" && (
                             <DropdownMenuItem onClick={() => updateStatusMutation.mutate({ id: acc.id, status: "active" })}>
@@ -415,16 +417,46 @@ export default function Accounts() {
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-border/60 flex items-center gap-4 text-xs text-muted-foreground">
+                  {/* Bitrix24 employee assignment block */}
+                  <button
+                    onClick={() => handleOpenBitrix(acc)}
+                    className={`w-full rounded-lg border px-3 py-2.5 flex items-center gap-3 mb-3 transition-colors text-left ${
+                      hasEmployee
+                        ? "border-blue-500/30 bg-blue-500/8 hover:bg-blue-500/15"
+                        : "border-dashed border-border/60 bg-muted/20 hover:bg-muted/40"
+                    }`}
+                  >
+                    <div className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
+                      hasEmployee ? "bg-blue-500/20 text-blue-400" : "bg-muted text-muted-foreground"
+                    }`}>
+                      {hasEmployee ? acc.bitrixResponsibleName!.charAt(0).toUpperCase() : "+"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      {hasEmployee ? (
+                        <>
+                          <p className="text-xs font-semibold text-blue-400 truncate">{acc.bitrixResponsibleName}</p>
+                          <p className="text-[10px] text-muted-foreground">Ответственный в Битрикс 24</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs font-semibold text-muted-foreground">Не назначен сотрудник</p>
+                          <p className="text-[10px] text-muted-foreground">Нажмите чтобы привязать сотрудника Битрикс 24</p>
+                        </>
+                      )}
+                    </div>
+                    {acc.bitrixPipelineName && (
+                      <span className="text-[10px] text-primary font-medium bg-primary/10 px-2 py-0.5 rounded-full shrink-0">
+                        {acc.bitrixPipelineName}
+                      </span>
+                    )}
+                    <Settings2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  </button>
+
+                  {/* Footer */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span>ID: {acc.telegramId ?? "—"}</span>
                     <span>·</span>
                     <span>Добавлен {new Date(acc.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
-                    {acc.bitrixPipelineName && (
-                      <>
-                        <span>·</span>
-                        <span className="text-primary font-medium">Воронка: {acc.bitrixPipelineName}</span>
-                      </>
-                    )}
                   </div>
                 </div>
               );
@@ -651,13 +683,40 @@ export default function Accounts() {
         <Dialog open={showBitrixModal} onOpenChange={setShowBitrixModal}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle className="font-black">Воронка Битрикс24</DialogTitle>
+              <DialogTitle className="font-black">Настройки Битрикс24</DialogTitle>
               <DialogDescription className="text-xs">
-                Настройте воронку, стадию и ответственного для этого Telegram аккаунта.
-                Если не задано — используются глобальные настройки.
+                Укажите воронку, стадию и ответственного сотрудника для этого Telegram аккаунта.
+                Все входящие сообщения будут создавать сделки в выбранной воронке и назначаться выбранному сотруднику.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
+              {/* Employee — primary field */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Сотрудник Битрикс 24 <span className="text-primary">*</span></Label>
+                <Select
+                  value={selectedResponsibleId}
+                  onValueChange={(val) => {
+                    setSelectedResponsibleId(val);
+                    const u = bitrixUsers.find((u: any) => u.id === val);
+                    setSelectedResponsibleName(u?.name ?? "");
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={bitrixUsers.length === 0 ? "Настройте Битрикс 24 в Настройках" : "Выберите сотрудника..."} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bitrixUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">Все входящие сообщения с этого Telegram-аккаунта будут создавать сделки и назначаться этому сотруднику.</p>
+              </div>
+
+              <div className="border-t border-border/40 pt-3">
+                <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide mb-3">Дополнительно</p>
+              </div>
+
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">Воронка (Pipeline)</Label>
                 <Select
@@ -698,26 +757,7 @@ export default function Accounts() {
                 </Select>
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Ответственный</Label>
-                <Select
-                  value={selectedResponsibleId}
-                  onValueChange={(val) => {
-                    setSelectedResponsibleId(val);
-                    const u = bitrixUsers.find((u: any) => u.id === val);
-                    setSelectedResponsibleName(u?.name ?? "");
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={bitrixUsers.length === 0 ? "Настройте Битрикс24 в Настройках" : "Выберите ответственного..."} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {bitrixUsers.map((u: any) => (
-                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+
 
               {!selectedPipelineId && pipelines.length === 0 && (
                 <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg p-3">

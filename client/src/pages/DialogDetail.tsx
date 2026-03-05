@@ -48,8 +48,16 @@ export default function DialogDetail() {
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: dialogData, refetch: refetchDialog } = trpc.dialogs.get.useQuery({ id: dialogId });
-  const { data: msgs, refetch: refetchMsgs } = trpc.messages.list.useQuery({ dialogId });
+  const prevMsgCountRef = useRef(0);
+
+  const { data: dialogData, refetch: refetchDialog } = trpc.dialogs.get.useQuery(
+    { id: dialogId },
+    { refetchInterval: 3000 } // poll every 3 s
+  );
+  const { data: msgs, refetch: refetchMsgs } = trpc.messages.list.useQuery(
+    { dialogId },
+    { refetchInterval: 2000 } // poll every 2 s for real-time messages
+  );
   const { data: quickReplies } = trpc.quickReplies.list.useQuery();
 
   const sendMutation = trpc.messages.send.useMutation({
@@ -66,8 +74,13 @@ export default function DialogDetail() {
     onError: () => toast.error("Ошибка при анализе"),
   });
 
+  // Auto-scroll only when new messages arrive (count increases)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!msgs) return;
+    if (msgs.length > prevMsgCountRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevMsgCountRef.current = msgs.length;
   }, [msgs]);
 
   const dialog = dialogData?.dialog;

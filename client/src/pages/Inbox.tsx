@@ -58,10 +58,10 @@ export default function Inbox() {
   const [search, setSearch] = useState("");
   const [, setLocation] = useLocation();
 
-  const { data, isLoading } = trpc.dialogs.list.useQuery({
-    status: statusFilter,
-    search: search || undefined,
-  });
+  const { data, isLoading } = trpc.dialogs.list.useQuery(
+    { status: statusFilter, search: search || undefined },
+    { refetchInterval: 3000 } // poll every 3 s for real-time updates
+  );
 
   return (
     <DashboardLayout>
