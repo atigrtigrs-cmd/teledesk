@@ -39,10 +39,10 @@
 - [ ] Remove iframe tab
 
 ## Bot Admin Panel — Edit Functionality
-- [ ] Groups tab: edit category and language per group
-- [ ] Groups tab: remove group from bot
-- [ ] Categories tab: edit category name (RU/EN) and line_id
-- [ ] Admins tab: add new admin by Telegram user ID
-- [ ] Admins tab: remove admin
-- [ ] Templates tab: verify edit works end-to-end
-- [ ] Add tRPC procedures: updateGroup, removeGroup, updateCategory, addAdmin, removeAdmin
+- [x] Groups tab: edit category and language per group
+- [x] Groups tab: remove group from bot
+- [x] Categories tab: edit category name (RU/EN) and line_id
+- [x] Admins tab: add new admin by Telegram user ID
+- [x] Admins tab: remove admin
+- [x] Templates tab: edit RU/EN text works end-to-end
+- [x] Add tRPC procedures: updateGroup, removeGroup, updateCategory, addAdmin, removeAdmin
