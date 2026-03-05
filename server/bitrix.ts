@@ -26,6 +26,10 @@ export async function createBitrixDeal(params: {
   contactName: string;
   contactPhone: string | null;
   description: string;
+  // Per-account Bitrix24 pipeline settings
+  pipelineId?: string | null;
+  stageId?: string | null;
+  responsibleId?: string | null;
 }): Promise<number | null> {
   const webhookUrl = await getWebhookUrl();
   if (!webhookUrl) {
@@ -61,14 +65,21 @@ export async function createBitrixDeal(params: {
     }
 
     // 2. Create deal
+    const dealFields: Record<string, unknown> = {
+      TITLE: params.title,
+      CONTACT_ID: bitrixContactId,
+      COMMENTS: params.description,
+      SOURCE_ID: "TELEGRAM",
+      OPENED: "Y",
+    };
+
+    // Apply per-account pipeline settings if configured
+    if (params.pipelineId) dealFields.CATEGORY_ID = params.pipelineId;
+    if (params.stageId) dealFields.STAGE_ID = params.stageId;
+    if (params.responsibleId) dealFields.ASSIGNED_BY_ID = params.responsibleId;
+
     const createDealRes = await bitrixCall(webhookUrl, "crm.deal.add", {
-      fields: {
-        TITLE: params.title,
-        CONTACT_ID: bitrixContactId,
-        COMMENTS: params.description,
-        SOURCE_ID: "TELEGRAM",
-        OPENED: "Y",
-      },
+      fields: dealFields,
     });
 
     const dealId = createDealRes?.result ?? null;

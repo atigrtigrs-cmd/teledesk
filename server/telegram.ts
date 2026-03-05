@@ -225,8 +225,8 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
       });
       dialogId = Number((inserted as any).insertId ?? 0);
 
-      // Create Bitrix24 deal for new dialog
-      await createBitrixDealForDialog(dialogId, contactId!, sender, text).catch(err =>
+      // Create Bitrix24 deal for new dialog (pass accountId for per-account pipeline settings)
+      await createBitrixDealForDialog(dialogId, contactId!, sender, text, accountId).catch(err =>
         console.error("[Bitrix] Failed to create deal:", err)
       );
     }
@@ -265,16 +265,41 @@ async function createBitrixDealForDialog(
   dialogId: number,
   contactId: number,
   sender: any,
-  firstMessage: string
+  firstMessage: string,
+  accountId?: number
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
+
+  // Load per-account Bitrix24 pipeline settings if accountId is provided
+  let pipelineId: string | null = null;
+  let stageId: string | null = null;
+  let responsibleId: string | null = null;
+
+  if (accountId) {
+    const acct = await db
+      .select()
+      .from(telegramAccounts)
+      .where(eq(telegramAccounts.id, accountId))
+      .limit(1);
+    if (acct[0]) {
+      pipelineId = acct[0].bitrixPipelineId ?? null;
+      stageId = acct[0].bitrixStageId ?? null;
+      responsibleId = acct[0].bitrixResponsibleId ?? null;
+    }
+    if (pipelineId || stageId || responsibleId) {
+      console.log(`[Bitrix] Using per-account pipeline for account #${accountId}: pipeline=${pipelineId}, stage=${stageId}, responsible=${responsibleId}`);
+    }
+  }
 
   const dealId = await createBitrixDeal({
     title: `Telegram: ${sender?.firstName ?? ""} ${sender?.lastName ?? ""} @${sender?.username ?? ""}`.trim(),
     contactName: `${sender?.firstName ?? ""} ${sender?.lastName ?? ""}`.trim(),
     contactPhone: sender?.phone ?? null,
     description: `Первое сообщение: ${firstMessage}`,
+    pipelineId,
+    stageId,
+    responsibleId,
   });
 
   if (dealId) {

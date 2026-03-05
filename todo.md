@@ -67,3 +67,12 @@
 - [x] Add phone login functions to telegram.ts (startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword)
 - [x] Add phone login UI: choose mode screen → phone input → SMS code → optional 2FA password
 - [x] Show both options in Accounts page: "По номеру телефона" and "QR-код"
+
+## Bug: Phone Code Not Sent
+- [ ] Debug why Telegram code is not arriving when entering phone number
+- [ ] Fix startPhoneLogin in telegram.ts
+
+## Per-Account Pipeline: Apply to Deal Creation
+- [ ] Find deal creation code in telegram.ts / bitrix.ts
+- [ ] Load per-account bitrix settings when creating deal
+- [ ] Pass pipeline ID, stage ID, responsible ID to Bitrix24 crm.deal.add call
