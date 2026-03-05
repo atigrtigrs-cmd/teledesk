@@ -54,4 +54,4 @@
 - [x] Show per-group send results (success/fail count)
 
 ## Bug Fixes
-- [ ] Fix TypeError: h.map is not a function crash on /bot page (unsafe .map() on non-array data)
+- [x] Fix TypeError: h.map is not a function crash on /bot page (unsafe .map() on non-array data)
