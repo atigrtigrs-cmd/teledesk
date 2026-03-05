@@ -18,7 +18,7 @@ export default function Register() {
   const registerMutation = trpc.auth.register.useMutation({
     onSuccess: async () => {
       await utils.auth.me.invalidate();
-      toast.success("Аккаунт создан! Добро пожаловать в TeleDesk.");
+      toast.success("Аккаунт создан! Добро пожаловать в LeadCash Connect.");
       navigate("/inbox");
     },
     onError: (err) => {
@@ -54,7 +54,7 @@ export default function Register() {
               <MessageSquare className="w-6 h-6 text-black" />
             </div>
             <span className="text-2xl font-black text-white tracking-tight">
-              Tele<span className="text-[#f5a623]">Desk</span>
+              LeadCash<span className="text-[#f5a623]"> Connect</span>
             </span>
           </div>
           <p className="text-[#888] text-sm">Создайте аккаунт — первый пользователь станет администратором</p>

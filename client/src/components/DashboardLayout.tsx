@@ -263,7 +263,7 @@ function DashboardLayoutContent({
           <div className="flex border-b border-border h-14 items-center justify-between bg-background px-4 sticky top-0 z-40">
             <div className="flex items-center gap-3">
               <SidebarTrigger className="h-8 w-8" />
-              <span className="text-sm font-semibold">{activeMenuItem?.label ?? "TeleDesk"}</span>
+              <span className="text-sm font-semibold">{activeMenuItem?.label ?? "LeadCash Connect"}</span>
             </div>
           </div>
         )}

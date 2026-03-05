@@ -38,7 +38,7 @@ export default function Home() {
               <MessageSquare className="h-4 w-4 text-primary-foreground" />
             </div>
             <span className="font-black text-base tracking-tight">
-              Tele<span className="text-primary">Desk</span>
+              LeadCash<span className="text-primary"> Connect</span>
             </span>
           </div>
           <Button
@@ -107,7 +107,7 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6 py-6">
           <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-border/40">
             {[
-              { step: "РЕГИСТРАЦИЯ", desc: "Войдите в TeleDesk и подключите Telegram аккаунты через QR-код за 2 минуты" },
+              { step: "РЕГИСТРАЦИЯ", desc: "Войдите в LeadCash Connect и подключите Telegram аккаунты через QR-код за 2 минуты" },
               { step: "ИНТЕГРАЦИЯ", desc: "Вставьте webhook Битрикс24 и выберите воронку для автоматического создания сделок" },
               { step: "ЗАПУСК", desc: "Все входящие сообщения создают сделки. ИИ пишет резюме диалога в карточку" },
             ].map((s, i) => (
@@ -267,10 +267,10 @@ export default function Home() {
               <MessageSquare className="h-3 w-3 text-primary-foreground" />
             </div>
             <span className="text-sm font-black">
-              Tele<span className="text-primary">Desk</span>
+              LeadCash<span className="text-primary"> Connect</span>
             </span>
           </div>
-          <p className="text-xs text-muted-foreground">© 2025 TeleDesk. Все права защищены.</p>
+          <p className="text-xs text-muted-foreground">© 2025 LeadCash Connect. Все права защищены.</p>
         </div>
       </footer>
     </div>
