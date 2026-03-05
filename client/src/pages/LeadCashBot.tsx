@@ -13,6 +13,8 @@ import {
   CheckCircle2,
   AlertCircle,
   MessageSquare,
+  LayoutDashboard,
+  ExternalLink,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -58,7 +60,7 @@ function formatDate(ts: string) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function LeadCashBot() {
-  const [tab, setTab] = useState<"groups" | "pending" | "logs">("groups");
+  const [tab, setTab] = useState<"groups" | "pending" | "logs" | "admin">("groups");
 
   const { data: groupsData, isLoading: groupsLoading, refetch: refetchGroups } =
     trpc.leadcashBot.groups.useQuery();
@@ -145,6 +147,7 @@ export default function LeadCashBot() {
             { id: "groups", label: "Все группы", count: allGroups.length },
             { id: "pending", label: "На модерации", count: pendingGroups.length },
             { id: "logs", label: "Лог событий", count: logs.length },
+            { id: "admin", label: "Админ панель", count: 0 },
           ] as const).map(t => (
             <button
               key={t.id}
@@ -266,6 +269,30 @@ export default function LeadCashBot() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Admin Panel Tab */}
+        {tab === "admin" && (
+          <div className="relative">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-muted-foreground">Полная Admin Panel бота открыта ниже</p>
+              <a
+                href="https://telegram-bitrix-bot-b4kx.onrender.com/admin"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Открыть отдельно
+              </a>
+            </div>
+            <iframe
+              src="https://telegram-bitrix-bot-b4kx.onrender.com/admin"
+              className="w-full rounded-xl border border-border bg-white"
+              style={{ height: "calc(100vh - 280px)", minHeight: 500 }}
+              title="LeadCash Bot Admin Panel"
+            />
           </div>
         )}
 

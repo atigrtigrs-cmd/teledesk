@@ -39,6 +39,12 @@ export const telegramAccounts = mysqlTable("telegram_accounts", {
   sessionString: text("sessionString"),
   status: mysqlEnum("status", ["pending", "active", "disconnected", "banned"]).default("pending").notNull(),
   avatarUrl: text("avatarUrl"),
+  // Per-account Bitrix24 pipeline override
+  bitrixPipelineId: varchar("bitrixPipelineId", { length: 64 }),
+  bitrixPipelineName: varchar("bitrixPipelineName", { length: 255 }),
+  bitrixStageId: varchar("bitrixStageId", { length: 64 }),
+  bitrixResponsibleId: varchar("bitrixResponsibleId", { length: 64 }),
+  bitrixResponsibleName: varchar("bitrixResponsibleName", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

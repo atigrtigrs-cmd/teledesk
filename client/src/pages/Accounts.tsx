@@ -26,7 +26,11 @@ import {
   MessageSquare,
   Wifi,
   Loader2,
+  Settings2,
+  ChevronDown,
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
@@ -73,8 +77,55 @@ export default function Accounts() {
   const [qrLoading, setQrLoading] = useState(false);
   const [qrExpired, setQrExpired] = useState(false);
 
+  // Bitrix24 pipeline settings per account
+  const [showBitrixModal, setShowBitrixModal] = useState(false);
+  const [bitrixAccountId, setBitrixAccountId] = useState<number | null>(null);
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
+  const [selectedPipelineName, setSelectedPipelineName] = useState<string>("");
+  const [selectedStageId, setSelectedStageId] = useState<string>("");
+  const [selectedResponsibleId, setSelectedResponsibleId] = useState<string>("");
+  const [selectedResponsibleName, setSelectedResponsibleName] = useState<string>("");
+
   const { data: accounts, refetch } = trpc.accounts.list.useQuery();
   const utils = trpc.useUtils();
+
+  const { data: pipelines = [] } = trpc.bitrix.getPipelines.useQuery(undefined, { enabled: showBitrixModal });
+  const { data: stages = [] } = trpc.bitrix.getPipelineStages.useQuery(
+    { pipelineId: selectedPipelineId },
+    { enabled: showBitrixModal && !!selectedPipelineId }
+  );
+  const { data: bitrixUsers = [] } = trpc.bitrix.getUsers.useQuery(undefined, { enabled: showBitrixModal });
+
+  const updateBitrixMutation = trpc.accounts.updateBitrixSettings.useMutation({
+    onSuccess: () => {
+      toast.success("Настройки воронки сохранены");
+      refetch();
+      setShowBitrixModal(false);
+    },
+    onError: (err) => toast.error("Ошибка: " + err.message),
+  });
+
+  const handleOpenBitrix = (acc: NonNullable<typeof accounts>[0]) => {
+    setBitrixAccountId(acc.id);
+    setSelectedPipelineId(acc.bitrixPipelineId ?? "");
+    setSelectedPipelineName(acc.bitrixPipelineName ?? "");
+    setSelectedStageId(acc.bitrixStageId ?? "");
+    setSelectedResponsibleId(acc.bitrixResponsibleId ?? "");
+    setSelectedResponsibleName(acc.bitrixResponsibleName ?? "");
+    setShowBitrixModal(true);
+  };
+
+  const handleSaveBitrix = () => {
+    if (!bitrixAccountId) return;
+    updateBitrixMutation.mutate({
+      id: bitrixAccountId,
+      bitrixPipelineId: selectedPipelineId || null,
+      bitrixPipelineName: selectedPipelineName || null,
+      bitrixStageId: selectedStageId || null,
+      bitrixResponsibleId: selectedResponsibleId || null,
+      bitrixResponsibleName: selectedResponsibleName || null,
+    });
+  };
 
   const deleteMutation = trpc.accounts.delete.useMutation({
     onSuccess: () => { toast.success("Аккаунт удалён"); refetch(); },
@@ -254,6 +305,10 @@ export default function Accounts() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleOpenBitrix(acc)}>
+                            <Settings2 className="mr-2 h-4 w-4" />
+                            Воронка Битрикс24
+                          </DropdownMenuItem>
                           {acc.status === "disconnected" && (
                             <DropdownMenuItem onClick={() => updateStatusMutation.mutate({ id: acc.id, status: "active" })}>
                               <RefreshCw className="mr-2 h-4 w-4" />
@@ -282,12 +337,113 @@ export default function Accounts() {
                     <span>ID: {acc.telegramId ?? "—"}</span>
                     <span>·</span>
                     <span>Добавлен {new Date(acc.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
+                    {acc.bitrixPipelineName && (
+                      <>
+                        <span>·</span>
+                        <span className="text-primary font-medium">Воронка: {acc.bitrixPipelineName}</span>
+                      </>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
         )}
+
+        {/* Bitrix24 Pipeline Settings Dialog */}
+        <Dialog open={showBitrixModal} onOpenChange={setShowBitrixModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="font-black">Воронка Битрикс24</DialogTitle>
+              <DialogDescription className="text-xs">
+                Настройте воронку, стадию и ответственного для этого Telegram аккаунта.
+                Если не задано — используются глобальные настройки.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Воронка (Pipeline)</Label>
+                <Select
+                  value={selectedPipelineId}
+                  onValueChange={(val) => {
+                    setSelectedPipelineId(val);
+                    const p = pipelines.find((p: any) => p.id === val);
+                    setSelectedPipelineName(p?.name ?? "");
+                    setSelectedStageId("");
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={pipelines.length === 0 ? "Настройте Битрикс24 в Настройках" : "Выберите воронку..."} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pipelines.map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Начальная стадия</Label>
+                <Select
+                  value={selectedStageId}
+                  onValueChange={(val) => setSelectedStageId(val)}
+                  disabled={!selectedPipelineId}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={!selectedPipelineId ? "Сначала выберите воронку" : "Выберите стадию..."} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {stages.map((s: any) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Ответственный</Label>
+                <Select
+                  value={selectedResponsibleId}
+                  onValueChange={(val) => {
+                    setSelectedResponsibleId(val);
+                    const u = bitrixUsers.find((u: any) => u.id === val);
+                    setSelectedResponsibleName(u?.name ?? "");
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={bitrixUsers.length === 0 ? "Настройте Битрикс24 в Настройках" : "Выберите ответственного..."} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bitrixUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {!selectedPipelineId && pipelines.length === 0 && (
+                <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg p-3">
+                  Битрикс24 не настроен. Перейдите в <strong>Настройки → Битрикс24</strong> и добавьте webhook URL.
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowBitrixModal(false)}>
+                Отмена
+              </Button>
+              <Button
+                className="flex-1 font-bold"
+                onClick={handleSaveBitrix}
+                disabled={updateBitrixMutation.isPending}
+              >
+                {updateBitrixMutation.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Сохранение...</>
+                ) : "Сохранить"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* QR Connect Dialog */}
         <Dialog open={showQR} onOpenChange={handleCloseQR}>

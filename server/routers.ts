@@ -125,6 +125,24 @@ export const appRouter = router({
     activeIds: protectedProcedure.query(() => {
       return getActiveAccountIds();
     }),
+
+    updateBitrixSettings: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        bitrixPipelineId: z.string().nullable().optional(),
+        bitrixPipelineName: z.string().nullable().optional(),
+        bitrixStageId: z.string().nullable().optional(),
+        bitrixResponsibleId: z.string().nullable().optional(),
+        bitrixResponsibleName: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { id, ...fields } = input;
+        await db.update(telegramAccounts).set(fields).where(eq(telegramAccounts.id, id));
+        const [acc] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, id)).limit(1);
+        return acc;
+      }),
   }),
 
   // ─── Dialogs ────────────────────────────────────────────────────────────────
@@ -497,6 +515,76 @@ export const appRouter = router({
           return { success: false, message: "Не удалось подключиться к Битрикс24" };
         }
       }),
+
+    // Fetch all pipelines (воронки) from Bitrix24
+    getPipelines: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [settings] = await db.select().from(bitrixSettings).limit(1);
+      if (!settings?.webhookUrl) return [];
+      try {
+        const base = settings.webhookUrl.replace(/\/$/, "");
+        const resp = await fetch(`${base}/crm.category.list?entityTypeId=2`);
+        const data = await resp.json();
+        if (data.result?.categories) {
+          return data.result.categories.map((c: any) => ({ id: String(c.id), name: c.name }));
+        }
+        // fallback: try crm.dealcategory.list
+        const resp2 = await fetch(`${base}/crm.dealcategory.list`);
+        const data2 = await resp2.json();
+        if (data2.result) {
+          const list = Array.isArray(data2.result) ? data2.result : Object.values(data2.result);
+          return list.map((c: any) => ({ id: String(c.ID), name: c.NAME }));
+        }
+        return [];
+      } catch {
+        return [];
+      }
+    }),
+
+    // Fetch stages for a given pipeline
+    getPipelineStages: protectedProcedure
+      .input(z.object({ pipelineId: z.string() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const [settings] = await db.select().from(bitrixSettings).limit(1);
+        if (!settings?.webhookUrl) return [];
+        try {
+          const base = settings.webhookUrl.replace(/\/$/, "");
+          const resp = await fetch(`${base}/crm.dealcategory.stages?id=${input.pipelineId}`);
+          const data = await resp.json();
+          if (data.result) {
+            const list = Array.isArray(data.result) ? data.result : Object.values(data.result);
+            return list.map((s: any) => ({ id: String(s.STATUS_ID), name: s.NAME }));
+          }
+          return [];
+        } catch {
+          return [];
+        }
+      }),
+
+    // Fetch users (responsible persons) from Bitrix24
+    getUsers: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [settings] = await db.select().from(bitrixSettings).limit(1);
+      if (!settings?.webhookUrl) return [];
+      try {
+        const base = settings.webhookUrl.replace(/\/$/, "");
+        const resp = await fetch(`${base}/user.get?ACTIVE=Y&start=0`);
+        const data = await resp.json();
+        if (data.result) {
+          return data.result.map((u: any) => ({
+            id: String(u.ID),
+            name: [u.NAME, u.LAST_NAME].filter(Boolean).join(" ") || u.EMAIL || `User ${u.ID}`,
+          }));
+        }
+        return [];
+      } catch {
+        return [];
+      }
+    }),
   }),
 
   // ─── Working Hours ────────────────────────────────────────────────────────────
