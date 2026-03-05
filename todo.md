@@ -46,3 +46,9 @@
 - [x] Admins tab: remove admin
 - [x] Templates tab: edit RU/EN text works end-to-end
 - [x] Add tRPC procedures: updateGroup, removeGroup, updateCategory, addAdmin, removeAdmin
+
+## Bot Broadcast (Рассылка)
+- [ ] Store LEADCASH_BOT_TOKEN as env secret
+- [ ] Add tRPC leadcashBot.broadcast procedure (category, text, lang filter)
+- [ ] Add Broadcast tab to LeadCashBot page (category selector, template picker, custom text, preview, send)
+- [ ] Show per-group send results (success/fail count)

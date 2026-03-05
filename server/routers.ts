@@ -19,6 +19,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
 import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds } from "./telegram";
+import { ENV } from "./_core/env";
 
 const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
 
@@ -756,6 +757,49 @@ export const appRouter = router({
           }),
         ]);
         return { success: resRu.ok && resEn.ok };
+      }),
+    broadcast: protectedProcedure
+      .input(z.object({
+        category: z.string(), // category key or "all"
+        text: z.string().min(1),
+        langFilter: z.enum(["ru", "en", "all"]).default("all"),
+      }))
+      .mutation(async ({ input }) => {
+        // Fetch groups from bot API
+        const groupsRes = await fetch(`${BOT_BASE}/api/groups`);
+        if (!groupsRes.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to fetch groups" });
+        const groupsData = await groupsRes.json() as { groups?: Array<{ id: number; title: string; category: string; lang: string }> };
+        const allGroups = groupsData.groups ?? [];
+
+        // Filter by category and lang
+        let targets = allGroups.filter(g => g.category !== "pending");
+        if (input.category !== "all") targets = targets.filter(g => g.category === input.category);
+        if (input.langFilter !== "all") targets = targets.filter(g => g.lang === input.langFilter);
+
+        const botToken = ENV.leadcashBotToken;
+        if (!botToken) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot token not configured" });
+
+        // Send messages in parallel with rate limiting
+        const results: Array<{ id: number; title: string; ok: boolean; error?: string }> = [];
+        for (const group of targets) {
+          try {
+            const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: group.id, text: input.text, parse_mode: "HTML" }),
+            });
+            const data = await res.json() as { ok: boolean; description?: string };
+            results.push({ id: group.id, title: group.title, ok: data.ok, error: data.description });
+          } catch (e) {
+            results.push({ id: group.id, title: group.title, ok: false, error: String(e) });
+          }
+          // Small delay to avoid Telegram rate limits
+          await new Promise(r => setTimeout(r, 50));
+        }
+
+        const successCount = results.filter(r => r.ok).length;
+        const failCount = results.filter(r => !r.ok).length;
+        return { successCount, failCount, total: targets.length, results };
       }),
   }),
 });

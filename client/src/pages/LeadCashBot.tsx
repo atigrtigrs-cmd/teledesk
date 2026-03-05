@@ -25,6 +25,9 @@ import {
   MessageSquare,
   Trash2,
   Plus,
+  Send,
+  CheckCheck,
+  XCircle,
 } from "lucide-react";
 import {
   Select,
@@ -42,7 +45,7 @@ import {
 } from "@/components/ui/dialog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "moderation" | "groups" | "categories" | "admins" | "templates" | "logs";
+type Tab = "overview" | "moderation" | "groups" | "categories" | "admins" | "templates" | "logs" | "broadcast";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Обзор", icon: LayoutGrid },
@@ -52,6 +55,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "admins", label: "Администраторы", icon: ShieldCheck },
   { id: "templates", label: "Шаблоны", icon: FileText },
   { id: "logs", label: "Лог событий", icon: ScrollText },
+  { id: "broadcast", label: "Рассылка", icon: Send },
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -623,6 +627,147 @@ function LogsTab() {
   );
 }
 
+// ─── Broadcast Tab ───────────────────────────────────────────────────────────
+function BroadcastTab() {
+  const { data: categoriesData } = trpc.leadcashBot.categories.useQuery();
+  const { data: templatesData } = trpc.leadcashBot.templates.useQuery();
+  const broadcastMutation = trpc.leadcashBot.broadcast.useMutation();
+
+  const [category, setCategory] = useState("all");
+  const [langFilter, setLangFilter] = useState<"all" | "ru" | "en">("all");
+  const [text, setText] = useState("");
+  const [results, setResults] = useState<null | { successCount: number; failCount: number; total: number; results: Array<{ id: number; title: string; ok: boolean; error?: string }> }>(null);
+
+  const categories: any[] = (categoriesData as any)?.categories ?? [];
+  const templates: any[] = (templatesData as any)?.templates ?? [];
+
+  const handleSend = () => {
+    if (!text.trim()) { toast.error("Введите текст сообщения"); return; }
+    broadcastMutation.mutate(
+      { category, text: text.trim(), langFilter },
+      {
+        onSuccess: (data) => {
+          setResults(data);
+          toast.success(`Отправлено: ${data.successCount}/${data.total} групп`);
+        },
+        onError: (err) => toast.error(err.message),
+      }
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Settings */}
+      <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+        <h3 className="font-black text-sm tracking-wide">Настройки рассылки</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground">Категория групп</Label>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue placeholder="Выберите категорию" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все группы</SelectItem>
+                {categories.map((cat: any) => (
+                  <SelectItem key={cat.key} value={cat.key}>
+                    {cat.name} ({cat.name_en})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground">Язык групп</Label>
+            <Select value={langFilter} onValueChange={(v) => setLangFilter(v as "all" | "ru" | "en")}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все языки</SelectItem>
+                <SelectItem value="ru">🇷🇺 Русские</SelectItem>
+                <SelectItem value="en">🇬🇧 Английские</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {/* Template picker */}
+      {templates.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+          <h3 className="font-black text-sm tracking-wide">Выбрать шаблон</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {templates.map((tpl: any) => (
+              <button
+                key={tpl.key}
+                onClick={() => setText(langFilter === "en" ? tpl.en : tpl.ru)}
+                className="text-left rounded-lg border border-border bg-muted/20 hover:bg-muted/50 p-3 transition-colors"
+              >
+                <p className="text-xs font-bold mb-1 text-primary">{tpl.key}</p>
+                <p className="text-xs text-muted-foreground line-clamp-2">{langFilter === "en" ? tpl.en : tpl.ru}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Message composer */}
+      <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+        <h3 className="font-black text-sm tracking-wide">Текст сообщения</h3>
+        <p className="text-xs text-muted-foreground">Поддерживается HTML-форматирование: <code className="bg-muted px-1 rounded">&lt;b&gt;</code>, <code className="bg-muted px-1 rounded">&lt;i&gt;</code>, <code className="bg-muted px-1 rounded">&lt;a href="..."&gt;</code></p>
+        <Textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="Введите текст рассылки..."
+          className="min-h-[140px] font-mono text-sm"
+        />
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">{text.length} символов</p>
+          <Button
+            onClick={handleSend}
+            disabled={broadcastMutation.isPending || !text.trim()}
+            className="gap-2 font-bold"
+          >
+            {broadcastMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {broadcastMutation.isPending ? "Отправляем..." : "Отправить рассылку"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Results */}
+      {results && (
+        <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+          <div className="flex items-center gap-4">
+            <h3 className="font-black text-sm tracking-wide flex-1">Результаты рассылки</h3>
+            <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+              <CheckCheck className="h-4 w-4" />{results.successCount} успешно
+            </span>
+            {results.failCount > 0 && (
+              <span className="flex items-center gap-1.5 text-xs font-bold text-red-400">
+                <XCircle className="h-4 w-4" />{results.failCount} ошибок
+              </span>
+            )}
+          </div>
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {results.results.map((r) => (
+              <div key={r.id} className={`flex items-center gap-3 rounded-lg px-3 py-2 text-xs ${
+                r.ok ? "bg-emerald-500/5 border border-emerald-500/20" : "bg-red-500/5 border border-red-500/20"
+              }`}>
+                {r.ok
+                  ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  : <XCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />}
+                <span className="flex-1 truncate font-medium">{r.title}</span>
+                {!r.ok && <span className="text-red-400 truncate max-w-[200px]">{r.error}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function LeadCashBot() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -694,6 +839,7 @@ export default function LeadCashBot() {
         {activeTab === "admins" && <AdminsTab />}
         {activeTab === "templates" && <TemplatesTab />}
         {activeTab === "logs" && <LogsTab />}
+        {activeTab === "broadcast" && <BroadcastTab />}
       </div>
     </DashboardLayout>
   );
