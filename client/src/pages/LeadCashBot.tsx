@@ -636,10 +636,13 @@ function BroadcastTab() {
   const [category, setCategory] = useState("all");
   const [langFilter, setLangFilter] = useState<"all" | "ru" | "en">("all");
   const [text, setText] = useState("");
-  const [results, setResults] = useState<null | { successCount: number; failCount: number; total: number; results: Array<{ id: number; title: string; ok: boolean; error?: string }> }>(null);
+  const [results, setResults] = useState<null | { successCount: number; failCount: number; total: number; results: Array<{ id: string; title: string; ok: boolean; error?: string }> }>(null);
 
-  const categories: any[] = (categoriesData as any)?.categories ?? [];
-  const templates: any[] = (templatesData as any)?.templates ?? [];
+  // categories and templates come as objects from bot API, convert to arrays
+  const categoriesObj = (categoriesData as any)?.categories ?? {};
+  const categories: { key: string; name: string; name_en: string }[] = Object.entries(categoriesObj).map(([key, cat]: [string, any]) => ({ key, name: cat.name, name_en: cat.name_en }));
+  const templatesObj = (templatesData as any)?.templates ?? {};
+  const templates: { key: string; ru: string; en: string }[] = Object.entries(templatesObj).map(([key, tpl]: [string, any]) => ({ key, ru: tpl.ru, en: tpl.en }));
 
   const handleSend = () => {
     if (!text.trim()) { toast.error("Введите текст сообщения"); return; }

@@ -768,8 +768,18 @@ export const appRouter = router({
         // Fetch groups from bot API
         const groupsRes = await fetch(`${BOT_BASE}/api/groups`);
         if (!groupsRes.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to fetch groups" });
-        const groupsData = await groupsRes.json() as { groups?: Array<{ id: number; title: string; category: string; lang: string }> };
-        const allGroups = groupsData.groups ?? [];
+        const groupsData = await groupsRes.json() as Record<string, any>;
+        // Groups are nested under category keys: { advertisers: { count, groups: {chatId: {title, category, lang}} }, ... }
+        const allGroups: Array<{ id: string; title: string; category: string; lang: string }> = [];
+        const CATEGORY_KEYS = ["advertisers", "brokers_ru", "brokers_en", "pending", "test"];
+        for (const catKey of CATEGORY_KEYS) {
+          const catData = groupsData[catKey];
+          if (catData && typeof catData === "object" && catData.groups && typeof catData.groups === "object") {
+            for (const [chatId, info] of Object.entries(catData.groups as Record<string, any>)) {
+              allGroups.push({ id: chatId, title: info.title ?? chatId, category: info.category ?? catKey, lang: info.lang ?? "ru" });
+            }
+          }
+        }
 
         // Filter by category and lang
         let targets = allGroups.filter(g => g.category !== "pending");
@@ -780,7 +790,7 @@ export const appRouter = router({
         if (!botToken) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot token not configured" });
 
         // Send messages in parallel with rate limiting
-        const results: Array<{ id: number; title: string; ok: boolean; error?: string }> = [];
+        const results: Array<{ id: string; title: string; ok: boolean; error?: string }> = [];
         for (const group of targets) {
           try {
             const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
