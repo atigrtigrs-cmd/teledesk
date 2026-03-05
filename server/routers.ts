@@ -675,7 +675,66 @@ export const appRouter = router({
         const data = await res.json().catch(() => ({}));
         return { success: res.ok, data };
       }),
-    // Update a template
+    // Update a group's category and language
+    updateGroup: protectedProcedure
+      .input(z.object({
+        chatId: z.string(),
+        title: z.string().optional(),
+        category: z.string(),
+        lang: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const res = await fetch(`${BOT_BASE}/api/groups/${encodeURIComponent(input.chatId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: input.title, category: input.category, lang: input.lang }),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { success: res.ok, data };
+      }),
+    // Update a category
+    updateCategory: protectedProcedure
+      .input(z.object({
+        key: z.string(),
+        name: z.string(),
+        name_en: z.string(),
+        line_id: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const res = await fetch(`${BOT_BASE}/api/categories/${encodeURIComponent(input.key)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: input.name, name_en: input.name_en, line_id: input.line_id }),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { success: res.ok, data };
+      }),
+    // Add a new admin
+    addAdmin: protectedProcedure
+      .input(z.object({
+        telegram_id: z.string(),
+        name: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const res = await fetch(`${BOT_BASE}/api/admins`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ telegram_id: input.telegram_id, name: input.name }),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { success: res.ok, data };
+      }),
+    // Remove an admin
+    removeAdmin: protectedProcedure
+      .input(z.object({ telegram_id: z.string() }))
+      .mutation(async ({ input }) => {
+        const res = await fetch(`${BOT_BASE}/api/admins/${encodeURIComponent(input.telegram_id)}`, {
+          method: "DELETE",
+        });
+        const data = await res.json().catch(() => ({}));
+        return { success: res.ok, data };
+      }),
+    // Update a template (correct endpoint)
     updateTemplate: protectedProcedure
       .input(z.object({
         key: z.string(),
@@ -683,13 +742,20 @@ export const appRouter = router({
         en: z.string(),
       }))
       .mutation(async ({ input }) => {
-        const res = await fetch(`${BOT_BASE}/api/templates/update`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: input.key, ru: input.ru, en: input.en }),
-        });
-        const data = await res.json().catch(() => ({}));
-        return { success: res.ok, data };
+        // Try both RU and EN via the per-lang endpoint
+        const [resRu, resEn] = await Promise.all([
+          fetch(`${BOT_BASE}/api/templates/${encodeURIComponent(input.key)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lang: "ru", text: input.ru }),
+          }),
+          fetch(`${BOT_BASE}/api/templates/${encodeURIComponent(input.key)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lang: "en", text: input.en }),
+          }),
+        ]);
+        return { success: resRu.ok && resEn.ok };
       }),
   }),
 });

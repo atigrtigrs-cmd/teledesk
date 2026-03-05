@@ -1,6 +1,8 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -21,10 +23,23 @@ import {
   X,
   AlertCircle,
   MessageSquare,
+  Trash2,
+  Plus,
 } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab = "overview" | "moderation" | "groups" | "categories" | "admins" | "templates" | "logs";
@@ -55,6 +70,7 @@ const STAT_COLORS = [
   "from-amber-600 to-amber-800",
 ];
 
+// ─── Shared helpers ───────────────────────────────────────────────────────────
 function StatCard({ label, value, colorIdx }: { label: string; value: number | string; colorIdx: number }) {
   return (
     <div className={`rounded-xl p-4 bg-gradient-to-br ${STAT_COLORS[colorIdx % STAT_COLORS.length]} text-white`}>
@@ -89,11 +105,12 @@ function OverviewTab() {
   const { data: groups, isLoading } = trpc.leadcashBot.groups.useQuery();
   const { data: logs } = trpc.leadcashBot.logs.useQuery();
   if (isLoading) return <LoadingState />;
-  const advertisers = (groups as any)?.advertisers?.count ?? 0;
-  const brokersRu = (groups as any)?.brokers_ru?.count ?? 0;
-  const brokersEn = (groups as any)?.brokers_en?.count ?? 0;
-  const pending = (groups as any)?.pending?.count ?? 0;
-  const total = (groups as any)?.total_groups ?? 0;
+  const g = groups as any;
+  const advertisers = g?.advertisers?.count ?? 0;
+  const brokersRu = g?.brokers_ru?.count ?? 0;
+  const brokersEn = g?.brokers_en?.count ?? 0;
+  const pending = g?.pending?.count ?? 0;
+  const total = g?.total_groups ?? 0;
   const logCount = (logs as any)?.total_entries ?? 0;
   return (
     <div className="space-y-6">
@@ -105,7 +122,7 @@ function OverviewTab() {
         <StatCard label="Рекламодатели" value={advertisers} colorIdx={4} />
         <StatCard label="На модерации" value={pending} colorIdx={0} />
         <StatCard label="Событий в логе" value={logCount} colorIdx={1} />
-        <StatCard label="Тест" value={(groups as any)?.test?.count ?? 0} colorIdx={2} />
+        <StatCard label="Тест" value={g?.test?.count ?? 0} colorIdx={2} />
       </div>
       {pending > 0 && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 flex items-center gap-3">
@@ -134,6 +151,10 @@ function ModerationTab() {
       refetch();
     },
     onError: () => { toast.error("Ошибка сети"); setApproving(null); },
+  });
+  const removeMutation = trpc.leadcashBot.removeGroup.useMutation({
+    onSuccess: () => { toast.success("Группа удалена"); refetch(); },
+    onError: () => toast.error("Ошибка удаления"),
   });
   if (isLoading) return <LoadingState />;
   const pendingGroups = Object.entries((groups as any)?.pending?.groups ?? {}) as [string, any][];
@@ -164,13 +185,18 @@ function ModerationTab() {
               size="sm"
               className="h-8 text-xs font-bold"
               disabled={!selectedCategory[chatId] || approving === chatId}
-              onClick={() => {
-                setApproving(chatId);
-                approveMutation.mutate({ chatId, category: selectedCategory[chatId], lang: group.lang ?? "ru" });
-              }}
+              onClick={() => { setApproving(chatId); approveMutation.mutate({ chatId, category: selectedCategory[chatId], lang: group.lang ?? "ru" }); }}
             >
               {approving === chatId ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
               Одобрить
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={() => removeMutation.mutate({ chatId })}
+            >
+              <Trash2 className="h-3 w-3" />
             </Button>
           </div>
         </div>
@@ -181,9 +207,28 @@ function ModerationTab() {
 
 // ─── Groups Tab ───────────────────────────────────────────────────────────────
 function GroupsTab() {
-  const { data: groups, isLoading } = trpc.leadcashBot.groups.useQuery();
+  const { data: groups, isLoading, refetch } = trpc.leadcashBot.groups.useQuery();
+  const { data: categoriesData } = trpc.leadcashBot.categories.useQuery();
   const [filter, setFilter] = useState<string>("all");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editCategory, setEditCategory] = useState("");
+  const [editLang, setEditLang] = useState("");
+
+  const updateMutation = trpc.leadcashBot.updateGroup.useMutation({
+    onSuccess: (res) => {
+      if (res.success) { toast.success("Группа обновлена"); refetch(); }
+      else toast.error("Ошибка обновления");
+      setEditingId(null);
+    },
+    onError: () => toast.error("Ошибка сети"),
+  });
+  const removeMutation = trpc.leadcashBot.removeGroup.useMutation({
+    onSuccess: () => { toast.success("Группа удалена"); refetch(); },
+    onError: () => toast.error("Ошибка удаления"),
+  });
+
   if (isLoading) return <LoadingState />;
+
   const allGroups: { chatId: string; group: any; category: string }[] = [];
   const cats = ["advertisers", "brokers_ru", "brokers_en", "test", "pending"];
   for (const cat of cats) {
@@ -193,8 +238,11 @@ function GroupsTab() {
     }
   }
   const filtered = filter === "all" ? allGroups : allGroups.filter(g => g.category === filter);
+  const categories = Object.entries((categoriesData as any)?.categories ?? {}) as [string, any][];
+
   return (
     <div className="space-y-4">
+      {/* Filter bar */}
       <div className="flex flex-wrap gap-2">
         {[{ id: "all", label: "Все" }, ...cats.map(c => ({ id: c, label: c }))].map(f => (
           <button
@@ -205,33 +253,83 @@ function GroupsTab() {
             }`}
           >
             {f.id === "all" ? "Все" : f.label}
-            {f.id !== "all" && (
-              <span className="ml-1.5 opacity-60">{allGroups.filter(g => g.category === f.id).length}</span>
-            )}
+            {f.id !== "all" && <span className="ml-1.5 opacity-60">{allGroups.filter(g => g.category === f.id).length}</span>}
           </button>
         ))}
       </div>
+
       {filtered.length === 0 ? (
         <EmptyState icon={Users} title="Нет групп" description="В этой категории нет групп." />
       ) : (
         <div className="space-y-2">
           {filtered.map(({ chatId, group, category }) => (
-            <div key={chatId} className="bg-card border border-border rounded-xl px-4 py-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                  <MessageSquare className="h-4 w-4 text-primary" />
+            <div key={chatId} className="bg-card border border-border rounded-xl px-4 py-3">
+              {editingId === chatId ? (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <MessageSquare className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm truncate">{group.title}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{chatId}</p>
+                    </div>
+                  </div>
+                  <Select value={editCategory} onValueChange={setEditCategory}>
+                    <SelectTrigger className="w-36 h-8 text-xs">
+                      <SelectValue placeholder="Категория" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map(([key, cat]) => (
+                        <SelectItem key={key} value={key}>{cat.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={editLang} onValueChange={setEditLang}>
+                    <SelectTrigger className="w-20 h-8 text-xs">
+                      <SelectValue placeholder="Язык" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ru">RU</SelectItem>
+                      <SelectItem value="en">EN</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setEditingId(null)}><X className="h-3.5 w-3.5" /></Button>
+                    <Button size="sm" className="h-8 text-xs font-bold gap-1" disabled={updateMutation.isPending}
+                      onClick={() => updateMutation.mutate({ chatId, category: editCategory, lang: editLang, title: group.title })}>
+                      {updateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      Сохранить
+                    </Button>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-sm truncate">{group.title}</p>
-                  <p className="text-xs text-muted-foreground font-mono">{chatId}</p>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <MessageSquare className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm truncate">{group.title}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{chatId}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${CATEGORY_COLORS[category] ?? "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"}`}>
+                      {category}
+                    </span>
+                    <span className="text-xs text-muted-foreground uppercase">{group.lang ?? "—"}</span>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                      onClick={() => { setEditingId(chatId); setEditCategory(category); setEditLang(group.lang ?? "ru"); }}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => removeMutation.mutate({ chatId })}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${CATEGORY_COLORS[category] ?? "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"}`}>
-                  {category}
-                </span>
-                <span className="text-xs text-muted-foreground uppercase">{group.lang ?? "—"}</span>
-              </div>
+              )}
             </div>
           ))}
         </div>
@@ -242,27 +340,77 @@ function GroupsTab() {
 
 // ─── Categories Tab ───────────────────────────────────────────────────────────
 function CategoriesTab() {
-  const { data, isLoading } = trpc.leadcashBot.categories.useQuery();
+  const { data, isLoading, refetch } = trpc.leadcashBot.categories.useQuery();
   const { data: groups } = trpc.leadcashBot.groups.useQuery();
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editNameEn, setEditNameEn] = useState("");
+  const [editLineId, setEditLineId] = useState("");
+
+  const updateMutation = trpc.leadcashBot.updateCategory.useMutation({
+    onSuccess: (res) => {
+      if (res.success) { toast.success("Категория обновлена"); refetch(); }
+      else toast.error("Ошибка обновления");
+      setEditingKey(null);
+    },
+    onError: () => toast.error("Ошибка сети"),
+  });
+
   if (isLoading) return <LoadingState />;
   const categories = Object.entries((data as any)?.categories ?? {}) as [string, any][];
+
   return (
     <div className="space-y-3">
       {categories.map(([key, cat]) => {
         const count = (groups as any)?.[key]?.count ?? 0;
+        const isEditing = editingKey === key;
         return (
-          <div key={key} className="bg-card border border-border rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <p className="font-bold text-sm">{cat.name}</p>
-              <p className="text-xs text-muted-foreground">{cat.name_en} · Line ID: {cat.line_id}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${CATEGORY_COLORS[key] ?? "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"}`}>
-                {key}
-              </span>
-              <span className="text-sm font-black text-primary">{count}</span>
-              <span className="text-xs text-muted-foreground">групп</span>
-            </div>
+          <div key={key} className="bg-card border border-border rounded-xl p-4">
+            {isEditing ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${CATEGORY_COLORS[key] ?? "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"}`}>{key}</span>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setEditingKey(null)}><X className="h-3.5 w-3.5" /></Button>
+                    <Button size="sm" className="h-7 text-xs font-bold gap-1" disabled={updateMutation.isPending}
+                      onClick={() => updateMutation.mutate({ key, name: editName, name_en: editNameEn, line_id: editLineId })}>
+                      {updateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      Сохранить
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Название (RU)</Label>
+                    <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-8 text-xs" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Название (EN)</Label>
+                    <Input value={editNameEn} onChange={e => setEditNameEn(e.target.value)} className="h-8 text-xs" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Line ID (Bitrix24)</Label>
+                    <Input value={editLineId} onChange={e => setEditLineId(e.target.value)} className="h-8 text-xs" />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-sm">{cat.name}</p>
+                  <p className="text-xs text-muted-foreground">{cat.name_en} · Line ID: {cat.line_id}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${CATEGORY_COLORS[key] ?? "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"}`}>{key}</span>
+                  <span className="text-sm font-black text-primary">{count}</span>
+                  <span className="text-xs text-muted-foreground">групп</span>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => { setEditingKey(key); setEditName(cat.name); setEditNameEn(cat.name_en ?? ""); setEditLineId(cat.line_id ?? ""); }}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         );
       })}
@@ -272,13 +420,67 @@ function CategoriesTab() {
 
 // ─── Admins Tab ───────────────────────────────────────────────────────────────
 function AdminsTab() {
-  const { data, isLoading } = trpc.leadcashBot.admins.useQuery();
+  const { data, isLoading, refetch } = trpc.leadcashBot.admins.useQuery();
+  const [showAdd, setShowAdd] = useState(false);
+  const [newId, setNewId] = useState("");
+  const [newName, setNewName] = useState("");
+
+  const addMutation = trpc.leadcashBot.addAdmin.useMutation({
+    onSuccess: (res) => {
+      if (res.success) { toast.success("Администратор добавлен"); refetch(); setShowAdd(false); setNewId(""); setNewName(""); }
+      else toast.error("Ошибка добавления");
+    },
+    onError: () => toast.error("Ошибка сети"),
+  });
+  const removeMutation = trpc.leadcashBot.removeAdmin.useMutation({
+    onSuccess: () => { toast.success("Администратор удалён"); refetch(); },
+    onError: () => toast.error("Ошибка удаления"),
+  });
+
   if (isLoading) return <LoadingState />;
   const admins = Object.entries((data as any)?.admins ?? {}) as [string, any][];
+
   return (
     <div className="space-y-3">
+      {/* Add admin button */}
+      <div className="flex justify-end">
+        <Button size="sm" className="gap-1.5 font-bold" onClick={() => setShowAdd(true)}>
+          <Plus className="h-3.5 w-3.5" />
+          Добавить администратора
+        </Button>
+      </div>
+
+      {/* Add admin dialog */}
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Добавить администратора</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Telegram ID</Label>
+              <Input value={newId} onChange={e => setNewId(e.target.value)} placeholder="123456789" className="h-9 text-sm" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Имя</Label>
+              <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Иван Иванов" className="h-9 text-sm" />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => setShowAdd(false)}>Отмена</Button>
+              <Button
+                className="flex-1 font-bold"
+                disabled={!newId || !newName || addMutation.isPending}
+                onClick={() => addMutation.mutate({ telegram_id: newId, name: newName })}
+              >
+                {addMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Добавить"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {admins.length === 0 ? (
-        <EmptyState icon={ShieldCheck} title="Нет администраторов" description="Добавьте администраторов через бота." />
+        <EmptyState icon={ShieldCheck} title="Нет администраторов" description="Добавьте администраторов через кнопку выше." />
       ) : (
         admins.map(([userId, admin]) => (
           <div key={userId} className="bg-card border border-border rounded-xl p-4 flex items-center justify-between">
@@ -291,7 +493,17 @@ function AdminsTab() {
                 <p className="text-xs text-muted-foreground">ID: {userId} · Добавлен: {admin.added_at}</p>
               </div>
             </div>
-            <Badge variant="outline" className="text-xs border-primary/30 text-primary">Администратор</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs border-primary/30 text-primary">Администратор</Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                onClick={() => removeMutation.mutate({ telegram_id: userId })}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
         ))
       )}
@@ -330,13 +542,15 @@ function TemplatesTab() {
               <p className="text-xs text-muted-foreground font-mono">{key}</p>
             </div>
             {editing !== key ? (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setEditing(key); setEditRu(tpl.ru ?? ""); setEditEn(tpl.en ?? ""); }}>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1"
+                onClick={() => { setEditing(key); setEditRu(tpl.ru ?? ""); setEditEn(tpl.en ?? ""); }}>
                 <Pencil className="h-3 w-3" />Изменить
               </Button>
             ) : (
               <div className="flex gap-1">
                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditing(null)}><X className="h-3 w-3" /></Button>
-                <Button size="sm" className="h-7 text-xs gap-1 font-bold" disabled={updateMutation.isPending} onClick={() => updateMutation.mutate({ key, ru: editRu, en: editEn })}>
+                <Button size="sm" className="h-7 text-xs gap-1 font-bold" disabled={updateMutation.isPending}
+                  onClick={() => updateMutation.mutate({ key, ru: editRu, en: editEn })}>
                   {updateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                   Сохранить
                 </Button>

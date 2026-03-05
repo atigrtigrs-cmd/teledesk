@@ -37,3 +37,12 @@
 - [ ] Add tRPC proxy procedures for all missing bot endpoints
 - [ ] Rebuild LeadCashBot page: Overview, Moderation, Groups, Categories, Admins, Templates, Logs, Chats tabs — all native in TeleDesk dark design
 - [ ] Remove iframe tab
+
+## Bot Admin Panel — Edit Functionality
+- [ ] Groups tab: edit category and language per group
+- [ ] Groups tab: remove group from bot
+- [ ] Categories tab: edit category name (RU/EN) and line_id
+- [ ] Admins tab: add new admin by Telegram user ID
+- [ ] Admins tab: remove admin
+- [ ] Templates tab: verify edit works end-to-end
+- [ ] Add tRPC procedures: updateGroup, removeGroup, updateCategory, addAdmin, removeAdmin
