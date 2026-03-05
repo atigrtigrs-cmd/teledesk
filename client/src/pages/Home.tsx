@@ -1,6 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { getLoginUrl } from "@/const";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import {
@@ -44,7 +43,7 @@ export default function Home() {
           </div>
           <Button
             size="sm"
-            onClick={() => { window.location.href = getLoginUrl(); }}
+            onClick={() => setLocation("/login")}
             className="font-semibold shadow shadow-primary/30 hover:shadow-primary/50 transition-shadow"
           >
             Войти
@@ -78,7 +77,7 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <Button
                 size="lg"
-                onClick={() => { window.location.href = getLoginUrl(); }}
+                onClick={() => setLocation("/register")}
                 className="gap-2 font-bold text-sm px-7 shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-shadow"
               >
                 Начать бесплатно
@@ -250,7 +249,7 @@ export default function Home() {
             </p>
             <Button
               size="lg"
-              onClick={() => { window.location.href = getLoginUrl(); }}
+              onClick={() => setLocation("/register")}
               className="gap-2 font-bold px-8 shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-shadow"
             >
               Начать бесплатно

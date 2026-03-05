@@ -1,7 +1,7 @@
-import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { registerUser, loginUser, createToken, AUTH_COOKIE_NAME } from "./authService";
 import { getDb } from "./db";
 import {
   telegramAccounts,
@@ -26,9 +26,35 @@ export const appRouter = router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie(AUTH_COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    register: publicProcedure
+      .input(z.object({ name: z.string().min(2), email: z.string().email(), password: z.string().min(6) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const user = await registerUser(input.name, input.email, input.password);
+          const token = await createToken(user.id, user.role);
+          const cookieOptions = getSessionCookieOptions(ctx.req);
+          ctx.res.cookie(AUTH_COOKIE_NAME, token, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 });
+          return { success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+        } catch (err: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        }
+      }),
+    login: publicProcedure
+      .input(z.object({ email: z.string().email(), password: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const user = await loginUser(input.email, input.password);
+          const token = await createToken(user.id, user.role);
+          const cookieOptions = getSessionCookieOptions(ctx.req);
+          ctx.res.cookie(AUTH_COOKIE_NAME, token, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 });
+          return { success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+        } catch (err: any) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: err.message });
+        }
+      }),
   }),
 
   // ─── Telegram Accounts ──────────────────────────────────────────────────────

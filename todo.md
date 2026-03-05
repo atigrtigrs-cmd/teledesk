@@ -43,3 +43,12 @@
 - [ ] Checkpoint save
 - [x] Deploy to GitHub + Render (https://github.com/atigrtigrs-cmd/teledesk, https://teledesk.onrender.com)
 - [x] Deliver to user
+
+## Auth Fix (Standalone Render Deploy)
+- [ ] Replace Manus OAuth with email/password auth (bcrypt + JWT)
+- [ ] Add Login page with email/password form
+- [ ] Add Register page (first user becomes admin)
+- [ ] Update server auth routes (POST /api/auth/login, /api/auth/register, /api/auth/me)
+- [ ] Update useAuth hook to work with custom JWT cookie
+- [ ] Remove Manus OAuth dependency from frontend const.ts
+- [ ] Deploy updated code to Render
