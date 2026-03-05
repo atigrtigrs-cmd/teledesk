@@ -41,5 +41,5 @@
 ## Phase 7: Tests & Delivery
 - [x] Vitest unit tests for server routers (7 tests passing)
 - [ ] Checkpoint save
-- [ ] Deploy to GitHub + Render
-- [ ] Deliver to user
+- [x] Deploy to GitHub + Render (https://github.com/atigrtigrs-cmd/teledesk, https://teledesk.onrender.com)
+- [x] Deliver to user

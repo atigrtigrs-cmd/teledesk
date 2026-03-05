@@ -18,6 +18,7 @@ import { eq, desc, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
+import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds } from "./telegram";
 
 export const appRouter = router({
   system: systemRouter,
@@ -69,9 +70,35 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await disconnectAccount(input.id).catch(() => {});
         await db.delete(telegramAccounts).where(eq(telegramAccounts.id, input.id));
         return { success: true };
       }),
+
+    startQRLogin: protectedProcedure
+      .input(z.object({ accountId: z.number() }))
+      .mutation(async ({ input }) => {
+        try {
+          const qr = await startQRLogin(input.accountId);
+          return { success: true, token: qr.token, expires: qr.expires };
+        } catch (err: any) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err?.message ?? "QR login failed" });
+        }
+      }),
+
+    disconnect: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await disconnectAccount(input.id).catch(() => {});
+        await db.update(telegramAccounts).set({ status: "disconnected" }).where(eq(telegramAccounts.id, input.id));
+        return { success: true };
+      }),
+
+    activeIds: protectedProcedure.query(() => {
+      return getActiveAccountIds();
+    }),
   }),
 
   // ─── Dialogs ────────────────────────────────────────────────────────────────
@@ -220,6 +247,28 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        // Get dialog to find account and contact for Telegram send
+        const [dialogRow] = await db
+          .select({ dialog: dialogs, contact: contacts })
+          .from(dialogs)
+          .leftJoin(contacts, eq(dialogs.contactId, contacts.id))
+          .where(eq(dialogs.id, input.dialogId))
+          .limit(1);
+
+        // Try to send via Telegram MTProto
+        if (dialogRow?.dialog.telegramAccountId && dialogRow?.contact?.telegramId) {
+          try {
+            await sendTelegramMessage(
+              dialogRow.dialog.telegramAccountId,
+              dialogRow.contact.telegramId,
+              input.text
+            );
+          } catch (err) {
+            console.error("[Send] Telegram send failed:", err);
+          }
+        }
+
         await db.insert(messages).values({
           dialogId: input.dialogId,
           direction: "outgoing",
