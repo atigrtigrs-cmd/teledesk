@@ -55,3 +55,7 @@
 
 ## Bug Fixes
 - [x] Fix TypeError: h.map is not a function crash on /bot page (unsafe .map() on non-array data)
+
+## QR Code Login UX Fix
+- [x] Add clear instructions in QR dialog: scan only from Telegram Desktop or web.telegram.org (not mobile app)
+- [x] Add links to getdesktop.telegram.org and web.telegram.org in the dialog

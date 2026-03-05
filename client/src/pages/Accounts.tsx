@@ -451,7 +451,7 @@ export default function Accounts() {
             <DialogHeader>
               <DialogTitle className="font-black">Подключить Telegram</DialogTitle>
               <DialogDescription className="text-xs">
-                Откройте Telegram → Настройки → Устройства → Подключить устройство и отсканируйте QR-код
+                Сканируйте QR-код через Telegram Desktop или web.telegram.org — мобильное приложение не поддерживается
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col items-center gap-5 py-4">
@@ -490,17 +490,34 @@ export default function Accounts() {
                 ) : null}
               </div>
 
+              {/* Warning banner */}
+              <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-start gap-2">
+                <span className="text-amber-400 text-base shrink-0">⚠️</span>
+                <p className="text-xs text-amber-300 leading-relaxed">
+                  <strong>Мобильное приложение Telegram не поддерживает этот QR.</strong>{" "}
+                  Используйте только Telegram Desktop или web.telegram.org
+                </p>
+              </div>
+
               <div className="w-full space-y-2.5">
                 {[
-                  "Откройте Telegram на телефоне",
-                  "Настройки → Устройства → Подключить устройство",
-                  "Наведите камеру на QR-код",
+                  { text: "Откройте Telegram Desktop на компьютере", link: "https://getdesktop.telegram.org", linkText: "Скачать" },
+                  { text: "Или войдите через браузер: web.telegram.org", link: "https://web.telegram.org", linkText: "Открыть" },
+                  { text: "Настройки → Устройства → Подключить устройство", link: null, linkText: null },
+                  { text: "Наведите камеру на QR-код выше", link: null, linkText: null },
                 ].map((step, i) => (
                   <div key={i} className="flex items-start gap-2.5">
                     <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-black shrink-0 mt-0.5">
                       {i + 1}
                     </div>
-                    <span className="text-sm">{step}</span>
+                    <span className="text-sm flex-1">
+                      {step.text}
+                      {step.link && (
+                        <a href={step.link} target="_blank" rel="noopener noreferrer" className="ml-1.5 text-primary underline underline-offset-2 text-xs font-semibold">
+                          {step.linkText} →
+                        </a>
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>
