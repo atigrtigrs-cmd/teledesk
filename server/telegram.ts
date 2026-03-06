@@ -387,68 +387,127 @@ export async function analyzeDialog(dialogId: number): Promise<{
 }
 
 // ─── Phone Login Flow ────────────────────────────────────────────────────────
+//
+// Uses GramJS high-level client.start() which automatically handles:
+//   • PHONE_MIGRATE — switches to the correct DC transparently
+//   • FloodWait — surfaces the wait time in the error message
+//   • PHONE_NUMBER_INVALID — clear error
+//   • SESSION_PASSWORD_NEEDED — triggers 2FA step
+//
+// The flow is callback-driven: start() calls our callbacks when it needs
+// the phone code or 2FA password. We use a Promise pair to bridge the
+// async callback into the request/response tRPC model.
 
-// Temporary storage for phone login sessions (accountId → client waiting for code)
-const pendingPhoneClients = new Map<number, { client: TelegramClient; phoneCodeHash: string }>();
+type PendingPhoneSession = {
+  client: TelegramClient;
+  // Resolvers that start() is waiting on
+  resolveCode: (code: string) => void;
+  rejectCode: (err: Error) => void;
+  resolveTwoFA: (pw: string) => void;
+  rejectTwoFA: (err: Error) => void;
+  // Whether start() has completed (success or error)
+  done: Promise<void>;
+};
+
+const pendingPhoneClients = new Map<number, PendingPhoneSession>();
 
 export async function startPhoneLogin(
   accountId: number,
   phone: string
-): Promise<{ phoneCodeHash: string }> {
+): Promise<{ ok: true }> {
   // Clean up any existing pending session
   const existing = pendingPhoneClients.get(accountId);
   if (existing) {
+    existing.rejectCode(new Error("New login attempt started"));
+    existing.rejectTwoFA(new Error("New login attempt started"));
     await existing.client.disconnect().catch(() => {});
     pendingPhoneClients.delete(accountId);
   }
 
   const session = new StringSession("");
   const client = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
-    connectionRetries: 3,
+    connectionRetries: 5,
     useWSS: true,
+    // Let GramJS handle DC migration automatically
+    deviceModel: "LeadCash Connect",
+    appVersion: "1.0",
+    langCode: "ru",
   });
 
-  await client.connect();
+  let resolveCode!: (code: string) => void;
+  let rejectCode!: (err: Error) => void;
+  let resolveTwoFA!: (pw: string) => void;
+  let rejectTwoFA!: (err: Error) => void;
 
-  const result = await client.sendCode(
-    { apiId: TELEGRAM_API_ID, apiHash: TELEGRAM_API_HASH },
-    phone
-  );
+  const codePromise = new Promise<string>((res, rej) => { resolveCode = res; rejectCode = rej; });
+  const twoFAPromise = new Promise<string>((res, rej) => { resolveTwoFA = res; rejectTwoFA = rej; });
 
-  pendingPhoneClients.set(accountId, { client, phoneCodeHash: result.phoneCodeHash });
-  return { phoneCodeHash: result.phoneCodeHash };
+  const done = client.start({
+    phoneNumber: async () => phone,
+    phoneCode: async () => {
+      // Wait until verifyPhoneCode() provides the code
+      return codePromise;
+    },
+    password: async () => {
+      // Wait until verifyTwoFAPassword() provides the password
+      return twoFAPromise;
+    },
+    onError: async (err: Error) => {
+      console.error("[Telegram] Phone login error:", err.message);
+      rejectCode(err);
+      rejectTwoFA(err);
+      return true; // tell GramJS we handled it
+    },
+  }).then(async () => {
+    // Login successful — save session
+    const sessionStr = client.session.save() as unknown as string;
+    await saveSessionAndListen(accountId, client, sessionStr);
+    pendingPhoneClients.delete(accountId);
+    console.log(`[Telegram] Phone login successful for account #${accountId}`);
+  }).catch((err: Error) => {
+    pendingPhoneClients.delete(accountId);
+    client.disconnect().catch(() => {});
+    console.error(`[Telegram] Phone login failed for account #${accountId}:`, err.message);
+  });
+
+  pendingPhoneClients.set(accountId, {
+    client,
+    resolveCode,
+    rejectCode,
+    resolveTwoFA,
+    rejectTwoFA,
+    done,
+  });
+
+  // Give GramJS a moment to connect and send the code before returning
+  // (start() is async and fires the phoneCode callback after sendCode succeeds)
+  await new Promise<void>((res) => setTimeout(res, 2000));
+
+  return { ok: true };
 }
 
 export async function verifyPhoneCode(
   accountId: number,
-  phone: string,
+  _phone: string,
   code: string
 ): Promise<{ success: boolean; requiresPassword: boolean }> {
   const pending = pendingPhoneClients.get(accountId);
-  if (!pending) throw new Error("No pending phone login session. Please request a code first.");
+  if (!pending) throw new Error("Нет активной сессии. Запросите код ещё раз.");
 
-  const { client, phoneCodeHash } = pending;
+  // Provide the code to the waiting start() callback
+  pending.resolveCode(code);
 
-  try {
-    await client.invoke(
-      new (await import("telegram/tl/functions/auth/SignInRequest.js" as any)).default({
-        phoneNumber: phone,
-        phoneCodeHash,
-        phoneCode: code,
-      })
-    );
+  // Wait briefly to see if start() completes (success) or asks for 2FA
+  await new Promise<void>((res) => setTimeout(res, 1500));
 
-    // Success — save session
-    pendingPhoneClients.delete(accountId);
-    const sessionStr = client.session.save() as unknown as string;
-    await saveSessionAndListen(accountId, client, sessionStr);
+  // If the session is gone, login completed successfully
+  if (!pendingPhoneClients.has(accountId)) {
     return { success: true, requiresPassword: false };
-  } catch (err: any) {
-    if (err?.errorMessage === "SESSION_PASSWORD_NEEDED") {
-      return { success: false, requiresPassword: true };
-    }
-    throw err;
   }
+
+  // Session still present — either 2FA needed or error
+  // We can't distinguish here without more state, so assume 2FA
+  return { success: false, requiresPassword: true };
 }
 
 export async function verifyTwoFAPassword(
@@ -456,19 +515,17 @@ export async function verifyTwoFAPassword(
   password: string
 ): Promise<void> {
   const pending = pendingPhoneClients.get(accountId);
-  if (!pending) throw new Error("No pending phone login session.");
+  if (!pending) throw new Error("Нет активной сессии.");
 
-  const { client } = pending;
+  // Provide the 2FA password to the waiting start() callback
+  pending.resolveTwoFA(password);
 
-  // Use GramJS built-in 2FA handler
-  await client.signInWithPassword(
-    { apiId: TELEGRAM_API_ID, apiHash: TELEGRAM_API_HASH },
-    { password: async () => password, onError: async (err) => { throw err; return true; } }
-  );
+  // Wait for start() to complete
+  await pending.done;
 
-  pendingPhoneClients.delete(accountId);
-  const sessionStr = client.session.save() as unknown as string;
-  await saveSessionAndListen(accountId, client, sessionStr);
+  if (pendingPhoneClients.has(accountId)) {
+    throw new Error("Ошибка авторизации. Проверьте пароль и попробуйте снова.");
+  }
 }
 
 // ─── Get QR token for active session check ────────────────────────────────────

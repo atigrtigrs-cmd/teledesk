@@ -151,10 +151,17 @@ export const appRouter = router({
       .input(z.object({ accountId: z.number(), phone: z.string().min(7) }))
       .mutation(async ({ input }) => {
         try {
-          const result = await startPhoneLogin(input.accountId, input.phone);
-          return { success: true, phoneCodeHash: result.phoneCodeHash };
+          await startPhoneLogin(input.accountId, input.phone);
+          return { success: true };
         } catch (err: any) {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err?.message ?? "Failed to send code" });
+          const msg = err?.message ?? "Failed to send code";
+          // Surface FloodWait in a friendly way
+          const floodMatch = msg.match(/FLOOD_WAIT_(\d+)/);
+          if (floodMatch) {
+            const secs = parseInt(floodMatch[1]);
+            throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `Слишком много попыток. Подождите ${secs} секунд и попробуйте снова.` });
+          }
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: msg });
         }
       }),
 

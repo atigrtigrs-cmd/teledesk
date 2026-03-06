@@ -576,7 +576,7 @@ export default function Accounts() {
                         onKeyDown={e => e.key === "Enter" && handleSendCode()}
                         className="font-mono"
                       />
-                      <p className="text-xs text-muted-foreground">Введите номер в международном формате с +</p>
+                      <p className="text-xs text-muted-foreground">Введите номер в международном формате с +, например <span className="font-mono text-foreground">+79001234567</span></p>
                     </div>
                     <div className="flex gap-2">
                       <Button variant="outline" className="flex-1" onClick={() => setLoginMode("choose")}>
@@ -599,12 +599,15 @@ export default function Accounts() {
 
                 {phoneStep === "code" && (
                   <>
-                    <div className="rounded-xl bg-green-500/10 border border-green-500/20 p-3 flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" />
-                      <p className="text-xs text-green-300">Код отправлен на номер <strong>{phoneNumber}</strong> в Telegram</p>
+                    <div className="rounded-xl bg-green-500/10 border border-green-500/20 p-3 flex items-start gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-green-300 font-semibold">Код отправлен на {phoneNumber}</p>
+                        <p className="text-xs text-green-300/70 mt-0.5">Проверьте приложение Telegram — код придёт как сообщение от <strong>Telegram</strong>. Если Telegram не установлен, код придёт по SMS.</p>
+                      </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold">Код из Telegram</Label>
+                      <Label className="text-xs font-semibold">Код из Telegram / SMS</Label>
                       <Input
                         placeholder="12345"
                         value={phoneCode}
@@ -612,6 +615,7 @@ export default function Accounts() {
                         onKeyDown={e => e.key === "Enter" && handleVerifyCode()}
                         className="font-mono text-center text-lg tracking-widest"
                         maxLength={6}
+                        autoFocus
                       />
                     </div>
                     <div className="flex gap-2">
