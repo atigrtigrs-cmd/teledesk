@@ -25,6 +25,7 @@ import { trpc } from "@/lib/trpc";
 import {
   BarChart3,
   Bot,
+  LayoutDashboard,
   LogOut,
   MessageSquare,
   PanelLeft,
@@ -40,6 +41,7 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 
 const menuItems = [
+  { icon: LayoutDashboard, label: "Главная", path: "/dashboard" },
   { icon: MessageSquare, label: "Входящие", path: "/inbox" },
   { icon: Smartphone, label: "Аккаунты", path: "/accounts" },
   { icon: BarChart3, label: "Аналитика", path: "/analytics" },

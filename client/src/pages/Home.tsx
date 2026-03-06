@@ -20,7 +20,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!loading && user) {
-      setLocation("/inbox");
+      setLocation("/dashboard");
     }
   }, [user, loading, setLocation]);
 

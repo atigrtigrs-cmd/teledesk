@@ -15,15 +15,18 @@ import AutoReplies from "./pages/AutoReplies";
 import Settings from "./pages/Settings";
 import DialogDetail from "./pages/DialogDetail";
 import LeadCashBot from "./pages/LeadCashBot";
+import Dashboard from "./pages/Dashboard";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/inbox" component={Inbox} />
       <Route path="/inbox/:id" component={DialogDetail} />
+      <Route path="/dialog/:id" component={DialogDetail} />
       <Route path="/accounts" component={Accounts} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/quick-replies" component={QuickReplies} />

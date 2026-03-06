@@ -14,7 +14,7 @@ import {
   workingHours,
   tags,
 } from "../drizzle/schema";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, gte, count, countDistinct } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
@@ -514,6 +514,141 @@ export const appRouter = router({
         .orderBy(desc(dialogs.lastMessageAt))
         .limit(10);
     }),
+
+    // Per-manager stats: dialogs, messages, deals, unread
+    managerStats: protectedProcedure
+      .input(z.object({
+        period: z.enum(["today", "week", "month", "all"]).default("week"),
+      }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+
+        const now = new Date();
+        let since: Date | null = null;
+        if (input.period === "today") {
+          since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        } else if (input.period === "week") {
+          since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        } else if (input.period === "month") {
+          since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        }
+
+        const accounts = await db.select().from(telegramAccounts);
+
+        const stats = await Promise.all(accounts.map(async (acc) => {
+          const dialogFilter = since
+            ? and(eq(dialogs.telegramAccountId, acc.id), gte(dialogs.createdAt, since))
+            : eq(dialogs.telegramAccountId, acc.id);
+
+          const [dialogCount] = await db.select({ count: count() }).from(dialogs).where(dialogFilter);
+
+          const [dealsCount] = await db.select({ count: count() }).from(dialogs)
+            .where(since
+              ? and(eq(dialogs.telegramAccountId, acc.id), sql`${dialogs.bitrixDealId} IS NOT NULL`, gte(dialogs.createdAt, since))
+              : and(eq(dialogs.telegramAccountId, acc.id), sql`${dialogs.bitrixDealId} IS NOT NULL`));
+
+          const [msgCount] = await db.select({ count: count() }).from(messages)
+            .innerJoin(dialogs, eq(messages.dialogId, dialogs.id))
+            .where(since
+              ? and(eq(dialogs.telegramAccountId, acc.id), gte(messages.createdAt, since))
+              : eq(dialogs.telegramAccountId, acc.id));
+
+          const [unreadCount] = await db
+            .select({ total: sql<number>`COALESCE(SUM(${dialogs.unreadCount}), 0)` })
+            .from(dialogs).where(eq(dialogs.telegramAccountId, acc.id));
+
+          const [openCount] = await db.select({ count: count() }).from(dialogs)
+            .where(and(eq(dialogs.telegramAccountId, acc.id), eq(dialogs.status, "open")));
+
+          return {
+            accountId: acc.id,
+            name: acc.firstName ? `${acc.firstName}${acc.lastName ? " " + acc.lastName : ""}` : (acc.phone ?? `Аккаунт #${acc.id}`),
+            phone: acc.phone ?? "",
+            username: acc.username ?? "",
+            status: acc.status,
+            bitrixResponsibleName: acc.bitrixResponsibleName ?? "",
+            dialogs: dialogCount?.count ?? 0,
+            deals: dealsCount?.count ?? 0,
+            messages: msgCount?.count ?? 0,
+            unread: Number(unreadCount?.total ?? 0),
+            openDialogs: openCount?.count ?? 0,
+            conversionRate: dialogCount?.count > 0
+              ? Math.round((dealsCount?.count / dialogCount?.count) * 100)
+              : 0,
+          };
+        }));
+
+        return stats.sort((a, b) => b.dialogs - a.dialogs);
+      }),
+
+    // Daily activity chart
+    dailyActivity: protectedProcedure
+      .input(z.object({
+        period: z.enum(["week", "month"]).default("week"),
+        accountId: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+
+        const days = input.period === "week" ? 7 : 30;
+        const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+        const whereClause = input.accountId
+          ? and(gte(dialogs.createdAt, since), eq(dialogs.telegramAccountId, input.accountId))
+          : gte(dialogs.createdAt, since);
+
+        const rows = await db
+          .select({
+            date: sql<string>`DATE(${dialogs.createdAt})`,
+            accountId: dialogs.telegramAccountId,
+            count: count(),
+          })
+          .from(dialogs)
+          .where(whereClause)
+          .groupBy(sql`DATE(${dialogs.createdAt})`, dialogs.telegramAccountId);
+
+        return rows;
+      }),
+
+    // Summary with period filter
+    summaryByPeriod: protectedProcedure
+      .input(z.object({
+        period: z.enum(["today", "week", "month", "all"]).default("week"),
+      }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return { totalDialogs: 0, totalDeals: 0, totalMessages: 0, activeAccounts: 0 };
+
+        const now = new Date();
+        let since: Date | null = null;
+        if (input.period === "today") {
+          since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        } else if (input.period === "week") {
+          since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        } else if (input.period === "month") {
+          since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        }
+
+        const dialogWhere = since ? gte(dialogs.createdAt, since) : undefined;
+        const msgWhere = since ? gte(messages.createdAt, since) : undefined;
+
+        const [totalDialogs] = await db.select({ count: count() }).from(dialogs).where(dialogWhere);
+        const [totalDeals] = await db.select({ count: count() }).from(dialogs)
+          .where(since
+            ? and(sql`${dialogs.bitrixDealId} IS NOT NULL`, gte(dialogs.createdAt, since))
+            : sql`${dialogs.bitrixDealId} IS NOT NULL`);
+        const [totalMessages] = await db.select({ count: count() }).from(messages).where(msgWhere);
+        const [activeAccounts] = await db.select({ count: countDistinct(dialogs.telegramAccountId) }).from(dialogs).where(dialogWhere);
+
+        return {
+          totalDialogs: totalDialogs?.count ?? 0,
+          totalDeals: totalDeals?.count ?? 0,
+          totalMessages: totalMessages?.count ?? 0,
+          activeAccounts: activeAccounts?.count ?? 0,
+        };
+      }),
   }),
 
   // ─── Bitrix Settings ─────────────────────────────────────────────────────────
@@ -852,6 +987,7 @@ export const appRouter = router({
         return { successCount, failCount, total: targets.length, results };
       }),
   }),
+
 });
 
 export type AppRouter = typeof appRouter;
