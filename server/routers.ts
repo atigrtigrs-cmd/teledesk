@@ -723,7 +723,13 @@ export const appRouter = router({
 
     // Per-user (manager) stats: assigned dialogs, response time, closed
     managerUserStats: protectedProcedure
-      .input(z.object({ period: z.enum(["today", "week", "month", "all"]).default("week") }))
+      .input(z.object({
+        period: z.enum(["today", "week", "month", "all"]).default("week"),
+        managerId: z.number().optional(),
+        tagId: z.number().optional(),
+        accountId: z.number().optional(),
+        status: z.string().optional(),
+      }))
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) return [];
@@ -736,34 +742,34 @@ export const appRouter = router({
         else if (input.period === "month") since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
         const allUsers = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users);
+        const filteredUsers = input.managerId ? allUsers.filter(u => u.id === input.managerId) : allUsers;
 
-        const stats = await Promise.all(allUsers.map(async (u) => {
-          const baseFilter = since
-            ? and(eq(dialogs.assigneeId, u.id), gte(dialogs.createdAt, since))
-            : eq(dialogs.assigneeId, u.id);
+        const stats = await Promise.all(filteredUsers.map(async (u) => {
+          // Build conditions array with all active filters
+          const conds: any[] = [eq(dialogs.assigneeId, u.id)];
+          if (since) conds.push(gte(dialogs.createdAt, since));
+          if (input.accountId) conds.push(eq(dialogs.telegramAccountId, input.accountId));
+          if (input.status) conds.push(sql`${dialogs.status} = ${input.status}`);
+          if (input.tagId) conds.push(sql`${dialogs.id} IN (SELECT dialog_id FROM dialog_tags WHERE tag_id = ${input.tagId})`);
+          const baseFilter = and(...conds);
 
           const [assigned] = await db.select({ count: count() }).from(dialogs).where(baseFilter);
 
-          const [closed] = await db.select({ count: count() }).from(dialogs)
-            .where(since
-              ? and(eq(dialogs.assigneeId, u.id), sql`${dialogs.status} IN ('resolved','closed')`, gte(dialogs.createdAt, since))
-              : and(eq(dialogs.assigneeId, u.id), sql`${dialogs.status} IN ('resolved','closed')`));
+          const closedConds = [...conds, sql`${dialogs.status} IN ('resolved','closed')`];
+          const [closed] = await db.select({ count: count() }).from(dialogs).where(and(...closedConds));
 
-          const [open] = await db.select({ count: count() }).from(dialogs)
-            .where(and(eq(dialogs.assigneeId, u.id), sql`${dialogs.status} NOT IN ('resolved','closed')`));
+          const openConds = [...conds, sql`${dialogs.status} NOT IN ('resolved','closed')`];
+          const [open] = await db.select({ count: count() }).from(dialogs).where(and(...openConds));
 
           // Avg first response time in minutes
+          const respConds = [...conds, sql`${dialogs.firstResponseAt} IS NOT NULL`];
           const [avgResp] = await db.select({
             avg: sql<number>`AVG(TIMESTAMPDIFF(MINUTE, ${dialogs.createdAt}, ${dialogs.firstResponseAt}))`
-          }).from(dialogs)
-            .where(since
-              ? and(eq(dialogs.assigneeId, u.id), sql`${dialogs.firstResponseAt} IS NOT NULL`, gte(dialogs.createdAt, since))
-              : and(eq(dialogs.assigneeId, u.id), sql`${dialogs.firstResponseAt} IS NOT NULL`));
+          }).from(dialogs).where(and(...respConds));
 
-          const [sentMsgs] = await db.select({ count: count() }).from(messages)
-            .where(since
-              ? and(eq(messages.senderId, u.id), eq(messages.direction, "outgoing"), gte(messages.createdAt, since))
-              : and(eq(messages.senderId, u.id), eq(messages.direction, "outgoing")));
+          const msgConds: any[] = [eq(messages.senderId, u.id), eq(messages.direction, "outgoing")];
+          if (since) msgConds.push(gte(messages.createdAt, since));
+          const [sentMsgs] = await db.select({ count: count() }).from(messages).where(and(...msgConds));
 
           return {
             userId: u.id,
@@ -780,10 +786,14 @@ export const appRouter = router({
         return stats.sort((a, b) => b.assigned - a.assigned);
       }),
 
-    // Summary with period filter
+    // Summary with period + extra filters
     summaryByPeriod: protectedProcedure
       .input(z.object({
         period: z.enum(["today", "week", "month", "all"]).default("week"),
+        managerId: z.number().optional(),
+        tagId: z.number().optional(),
+        accountId: z.number().optional(),
+        status: z.string().optional(),
       }))
       .query(async ({ input }) => {
         const db = await getDb();
@@ -799,14 +809,18 @@ export const appRouter = router({
           since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         }
 
-        const dialogWhere = since ? gte(dialogs.createdAt, since) : undefined;
+        const dConds: any[] = [];
+        if (since) dConds.push(gte(dialogs.createdAt, since));
+        if (input.managerId) dConds.push(eq(dialogs.assigneeId, input.managerId));
+        if (input.accountId) dConds.push(eq(dialogs.telegramAccountId, input.accountId));
+        if (input.status) dConds.push(sql`${dialogs.status} = ${input.status}`);
+        if (input.tagId) dConds.push(sql`${dialogs.id} IN (SELECT dialog_id FROM dialog_tags WHERE tag_id = ${input.tagId})`);
+        const dialogWhere = dConds.length > 0 ? and(...dConds) : undefined;
         const msgWhere = since ? gte(messages.createdAt, since) : undefined;
 
         const [totalDialogs] = await db.select({ count: count() }).from(dialogs).where(dialogWhere);
-        const [totalDeals] = await db.select({ count: count() }).from(dialogs)
-          .where(since
-            ? and(sql`${dialogs.bitrixDealId} IS NOT NULL`, gte(dialogs.createdAt, since))
-            : sql`${dialogs.bitrixDealId} IS NOT NULL`);
+        const dealConds = [...dConds, sql`${dialogs.bitrixDealId} IS NOT NULL`];
+        const [totalDeals] = await db.select({ count: count() }).from(dialogs).where(and(...dealConds));
         const [totalMessages] = await db.select({ count: count() }).from(messages).where(msgWhere);
         const [activeAccounts] = await db.select({ count: countDistinct(dialogs.telegramAccountId) }).from(dialogs).where(dialogWhere);
 
