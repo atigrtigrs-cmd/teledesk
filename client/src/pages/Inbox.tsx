@@ -8,6 +8,7 @@ import {
   Loader2,
   Wifi,
   WifiOff,
+  Tag,
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -62,15 +63,17 @@ export default function Inbox() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState<"all" | "mine" | "unassigned">("all");
+  const [selectedTagId, setSelectedTagId] = useState<number | undefined>(undefined);
   const [, setLocation] = useLocation();
   const { user } = useAuth();
 
   // SSE real-time connection — no polling needed
   const { connectionState } = useRealtimeInbox();
+  const { data: allTags } = trpc.tags.list.useQuery();
 
   const assigneeId = assigneeFilter === "mine" ? user?.id : undefined;
   const { data, isLoading } = trpc.dialogs.list.useQuery(
-    { status: statusFilter, search: search || undefined, assigneeId }
+    { status: statusFilter, search: search || undefined, assigneeId, tagId: selectedTagId }
   );
 
   // Filter unassigned client-side
@@ -150,6 +153,34 @@ export default function Inbox() {
               </SelectContent>
             </Select>
           </div>
+          {/* Tag filters */}
+          {allTags && allTags.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap mt-2">
+              <Tag className="h-3 w-3 text-muted-foreground shrink-0" />
+              <button
+                onClick={() => setSelectedTagId(undefined)}
+                className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition-all ${
+                  selectedTagId === undefined
+                    ? "bg-primary/20 text-primary"
+                    : "bg-muted text-muted-foreground hover:bg-accent"
+                }`}
+              >
+                Все
+              </button>
+              {allTags.map(tag => (
+                <button
+                  key={tag.id}
+                  onClick={() => setSelectedTagId(selectedTagId === tag.id ? undefined : tag.id)}
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition-all ${
+                    selectedTagId === tag.id ? "text-white" : "bg-muted text-muted-foreground hover:opacity-80"
+                  }`}
+                  style={selectedTagId === tag.id ? { backgroundColor: tag.color } : {}}
+                >
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Dialog List */}

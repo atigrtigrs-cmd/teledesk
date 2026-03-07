@@ -12,6 +12,9 @@ import {
   Loader2,
   XCircle,
   ExternalLink,
+  Tag,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -108,6 +111,10 @@ export default function Settings() {
             <TabsTrigger value="bitrix" className="gap-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Building2 className="h-3.5 w-3.5" />
               Битрикс24
+            </TabsTrigger>
+            <TabsTrigger value="tags" className="gap-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Tag className="h-3.5 w-3.5" />
+              Теги
             </TabsTrigger>
             <TabsTrigger value="hours" className="gap-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Clock className="h-3.5 w-3.5" />
@@ -231,6 +238,11 @@ export default function Settings() {
             </div>
           </TabsContent>
 
+          {/* Tags Tab */}
+          <TabsContent value="tags">
+            <TagsManager />
+          </TabsContent>
+
           {/* Working Hours Tab */}
           <TabsContent value="hours">
             <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -293,5 +305,109 @@ export default function Settings() {
         </Tabs>
       </div>
     </DashboardLayout>
+  );
+}
+
+const TAG_COLORS = [
+  "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6",
+  "#8b5cf6", "#ec4899", "#06b6d4", "#14b8a6", "#6b7280",
+];
+
+function TagsManager() {
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState(TAG_COLORS[0]);
+  const { data: tags, refetch } = trpc.tags.list.useQuery();
+  const createMutation = trpc.tags.create.useMutation({
+    onSuccess: () => { setNewName(""); refetch(); toast.success("Тег создан"); },
+    onError: () => toast.error("Ошибка создания тега"),
+  });
+  const deleteMutation = trpc.tags.delete.useMutation({
+    onSuccess: () => { refetch(); toast.success("Тег удалён"); },
+    onError: () => toast.error("Ошибка удаления"),
+  });
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="px-6 py-5 border-b border-border">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center shadow shadow-primary/30">
+            <Tag className="h-4 w-4 text-primary-foreground" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold">Теги диалогов</h2>
+            <p className="text-xs text-muted-foreground">Цветные метки для категоризации и фильтрации диалогов</p>
+          </div>
+        </div>
+      </div>
+      <div className="p-6 space-y-6">
+        {/* Create new tag */}
+        <div className="space-y-3">
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Создать тег</p>
+          <div className="flex gap-2 flex-wrap">
+            {TAG_COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => setNewColor(c)}
+                className={`h-7 w-7 rounded-full transition-all ${
+                  newColor === c ? "ring-2 ring-offset-2 ring-offset-background ring-white scale-110" : "hover:scale-105"
+                }`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <div className="h-9 w-9 rounded-lg shrink-0 flex items-center justify-center" style={{ backgroundColor: newColor }}>
+              <Tag className="h-4 w-4 text-white" />
+            </div>
+            <Input
+              placeholder="Название тега..."
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && newName.trim() && createMutation.mutate({ name: newName.trim(), color: newColor })}
+              className="flex-1 h-9 text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={() => newName.trim() && createMutation.mutate({ name: newName.trim(), color: newColor })}
+              disabled={!newName.trim() || createMutation.isPending}
+              className="gap-1.5 px-4"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Создать
+            </Button>
+          </div>
+        </div>
+        {/* Tags list */}
+        <div className="space-y-2">
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Существующие теги</p>
+          {(!tags || tags.length === 0) && (
+            <div className="text-center py-10 text-muted-foreground text-sm">
+              <Tag className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              <p>Нет тегов. Создайте первый!</p>
+            </div>
+          )}
+          {tags?.map(tag => (
+            <div key={tag.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-muted/40 border border-border">
+              <div className="h-4 w-4 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
+              <span className="flex-1 text-sm font-semibold">{tag.name}</span>
+              <span
+                className="px-2.5 py-0.5 rounded-full text-xs font-semibold text-white"
+                style={{ backgroundColor: tag.color }}
+              >
+                {tag.name}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-red-400"
+                onClick={() => deleteMutation.mutate({ id: tag.id })}
+                disabled={deleteMutation.isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

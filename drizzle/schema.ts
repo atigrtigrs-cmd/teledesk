@@ -178,3 +178,14 @@ export const workingHours = mysqlTable("working_hours", {
 
 export type WorkingHours = typeof workingHours.$inferSelect;
 export type InsertWorkingHours = typeof workingHours.$inferInsert;
+
+// ─── Dialog Tags (junction) ─────────────────────────────────────────────────────
+export const dialogTags = mysqlTable("dialog_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  dialogId: int("dialogId").notNull().references(() => dialogs.id, { onDelete: "cascade" }),
+  tagId: int("tagId").notNull().references(() => tags.id, { onDelete: "cascade" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DialogTag = typeof dialogTags.$inferSelect;
+export type InsertDialogTag = typeof dialogTags.$inferInsert;

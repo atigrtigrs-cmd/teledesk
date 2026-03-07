@@ -31,6 +31,8 @@ import {
   UserCheck,
   X,
   ChevronRight,
+  Tag,
+  Plus,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
@@ -116,6 +118,13 @@ export default function DialogDetail() {
     onSuccess: () => { toast.success("ИИ-анализ завершён"); refetchDialog(); },
     onError: () => toast.error("Ошибка при анализе"),
   });
+
+  // Tags
+  const { data: allTags } = trpc.tags.list.useQuery();
+  const { data: dialogTagsData, refetch: refetchDialogTags } = trpc.tags.forDialog.useQuery({ dialogId });
+  const assignTagMutation = trpc.tags.assign.useMutation({ onSuccess: () => refetchDialogTags() });
+  const removeTagMutation = trpc.tags.remove.useMutation({ onSuccess: () => refetchDialogTags() });
+  const assignedTagIds = new Set((dialogTagsData ?? []).map(dt => dt.tag.id));
 
   // Auto-scroll only when new messages arrive
   useEffect(() => {
@@ -512,7 +521,7 @@ export default function DialogDetail() {
             </div>
 
             {/* Assignee */}
-            <div className="px-4 py-4">
+            <div className="px-4 py-4 border-b border-border">
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Ответственный</p>
               {assignedUser ? (
                 <div className="flex items-center gap-2.5">
@@ -526,6 +535,59 @@ export default function DialogDetail() {
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">Не назначен</p>
+              )}
+            </div>
+
+            {/* Tags */}
+            <div className="px-4 py-4">
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Теги</p>
+              {/* Assigned tags */}
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {(dialogTagsData ?? []).map(({ tag }) => (
+                  <button
+                    key={tag.id}
+                    onClick={() => removeTagMutation.mutate({ dialogId, tagId: tag.id })}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-white group hover:opacity-80 transition-opacity"
+                    style={{ backgroundColor: tag.color }}
+                    title="Нажмите чтобы удалить"
+                  >
+                    {tag.name}
+                    <X className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                ))}
+                {(!dialogTagsData || dialogTagsData.length === 0) && (
+                  <p className="text-xs text-muted-foreground">Нет тегов</p>
+                )}
+              </div>
+              {/* Add tag dropdown */}
+              {allTags && allTags.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+                      <Plus className="h-3 w-3" />
+                      Добавить тег
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-48">
+                    {allTags.length === 0 && (
+                      <DropdownMenuItem disabled>Нет тегов. Создайте в Настройках.</DropdownMenuItem>
+                    )}
+                    {allTags.map(tag => (
+                      <DropdownMenuItem
+                        key={tag.id}
+                        onClick={() => assignTagMutation.mutate({ dialogId, tagId: tag.id })}
+                        className={assignedTagIds.has(tag.id) ? "opacity-40 pointer-events-none" : ""}
+                      >
+                        <div className="h-3 w-3 rounded-full mr-2 shrink-0" style={{ backgroundColor: tag.color }} />
+                        <span className="flex-1">{tag.name}</span>
+                        {assignedTagIds.has(tag.id) && <span className="ml-auto text-xs text-muted-foreground">✓</span>}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              {(!allTags || allTags.length === 0) && (
+                <p className="text-xs text-muted-foreground">Создайте теги в Настройках → Теги</p>
               )}
             </div>
           </div>

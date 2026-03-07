@@ -13,6 +13,7 @@ import {
   bitrixSettings,
   workingHours,
   tags,
+  dialogTags,
 } from "../drizzle/schema";
 import { eq, desc, and, sql, gte, count, countDistinct } from "drizzle-orm";
 import { z } from "zod";
@@ -222,11 +223,20 @@ export const appRouter = router({
         status: z.enum(["open", "in_progress", "waiting", "resolved", "closed", "all"]).optional().default("all"),
         assigneeId: z.number().optional(),
         search: z.string().optional(),
+        tagId: z.number().optional(),
       }))
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         const { users } = await import("../drizzle/schema");
+        // If filtering by tag, get dialog IDs that have this tag
+        let tagDialogIds: Set<number> | null = null;
+        if (input.tagId) {
+          const tagRows = await db.select({ dialogId: dialogTags.dialogId })
+            .from(dialogTags)
+            .where(eq(dialogTags.tagId, input.tagId));
+          tagDialogIds = new Set(tagRows.map(r => r.dialogId));
+        }
         const rows = await db
           .select({
             dialog: dialogs,
@@ -242,6 +252,7 @@ export const appRouter = router({
         return rows.filter(r => {
           if (input.status !== "all" && r.dialog.status !== input.status) return false;
           if (input.assigneeId && r.dialog.assigneeId !== input.assigneeId) return false;
+          if (tagDialogIds !== null && !tagDialogIds.has(r.dialog.id)) return false;
           if (input.search) {
             const q = input.search.toLowerCase();
             const name = `${r.contact?.firstName ?? ""} ${r.contact?.lastName ?? ""}`.toLowerCase();
@@ -542,6 +553,39 @@ export const appRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         await db.delete(tags).where(eq(tags.id, input.id));
         return { success: true };
+      }),
+    // Assign a tag to a dialog
+    assign: protectedProcedure
+      .input(z.object({ dialogId: z.number(), tagId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        try {
+          await db.insert(dialogTags).values({ dialogId: input.dialogId, tagId: input.tagId });
+        } catch (_) { /* already assigned - ignore duplicate */ }
+        return { success: true };
+      }),
+    // Remove a tag from a dialog
+    remove: protectedProcedure
+      .input(z.object({ dialogId: z.number(), tagId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.delete(dialogTags).where(
+          and(eq(dialogTags.dialogId, input.dialogId), eq(dialogTags.tagId, input.tagId))
+        );
+        return { success: true };
+      }),
+    // Get tags for a specific dialog
+    forDialog: protectedProcedure
+      .input(z.object({ dialogId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        return db.select({ tag: tags })
+          .from(dialogTags)
+          .innerJoin(tags, eq(dialogTags.tagId, tags.id))
+          .where(eq(dialogTags.dialogId, input.dialogId));
       }),
   }),
 
