@@ -80,11 +80,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <MessageSquare className="h-5 w-5 text-primary-foreground" />
               </div>
               <span className="text-2xl font-black tracking-tight">
-                Tele<span className="text-primary">Desk</span>
+                LeadCash <span className="text-primary">Connect</span>
               </span>
             </div>
             <p className="text-sm text-muted-foreground text-center leading-relaxed">
-              Управляйте Telegram-перепиской и создавайте<br />сделки в Битрикс24 автоматически
+              Центр коммуникаций с партнёрами
             </p>
           </div>
           <Button
@@ -180,7 +180,7 @@ function DashboardLayoutContent({
                     <MessageSquare className="h-3.5 w-3.5 text-primary-foreground" />
                   </div>
                   <span className="font-black text-sm tracking-tight truncate">
-                    Tele<span className="text-primary">Desk</span>
+                    LeadCash <span className="text-primary">Connect</span>
                   </span>
                 </div>
               )}

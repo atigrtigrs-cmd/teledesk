@@ -34,8 +34,8 @@ export default function Home() {
             <MessageSquare className="h-6 w-6 text-primary-foreground" />
           </div>
           <div className="text-center">
-            <h1 className="text-xl font-black tracking-tight">TeleDesk</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Управление коммуникациями</p>
+            <h1 className="text-xl font-black tracking-tight">LeadCash Connect</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Центр коммуникаций</p>
           </div>
         </div>
 
