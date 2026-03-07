@@ -84,3 +84,8 @@
 - [x] Added validation: if dialogId is 0, log error and return early instead of silently failing
 - [x] Added detailed logging: "Created new dialog #X", "Saved message to dialog #X"
 - [x] Manually restored missing message for existing dialog #2 (text: "Hi")
+
+## One Dialog Per Contact (Persistent History)
+- [x] Remove status filter from dialog lookup — find ANY existing dialog for contact, not just "open"
+- [x] If dialog exists (any status), reopen it and append message — never create a new dialog
+- [x] Update Bitrix deal creation: only create deal if no dialog existed before (truly new contact)

@@ -9,7 +9,7 @@ import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { getDb } from "./db";
 import { telegramAccounts, dialogs, messages, contacts, Dialog } from "../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { createBitrixDeal, addBitrixTimelineComment } from "./bitrix";
 import { invokeLLM } from "./_core/llm";
 import { emitInboxEvent } from "./sse";
@@ -189,34 +189,38 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
       contactId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId ?? 0);
     }
 
-    // ── 2. Find or create open dialog ─────────────────────────────────────
-    const openDialogs = await db
+    // ── 2. Find existing dialog (any status) or create one ───────────────
+    // One dialog per contact — never create duplicates, just reopen if closed
+    const existingDialogs = await db
       .select()
       .from(dialogs)
       .where(
         and(
           eq(dialogs.telegramAccountId, accountId),
-          eq(dialogs.contactId, contactId!),
-          eq(dialogs.status, "open")
+          eq(dialogs.contactId, contactId!)
         )
       )
+      .orderBy(desc(dialogs.id))
       .limit(1);
 
     let dialogId: number;
+    const isNewDialog = existingDialogs.length === 0;
 
-    if (openDialogs.length > 0) {
-      dialogId = openDialogs[0].id;
-      // Update last message
+    if (existingDialogs.length > 0) {
+      dialogId = existingDialogs[0].id;
+      // Reopen if closed/resolved, update last message and unread count
       await db
         .update(dialogs)
         .set({
+          status: "open",
           lastMessageText: text.substring(0, 255),
           lastMessageAt: new Date(),
-          unreadCount: openDialogs[0].unreadCount + 1,
+          unreadCount: existingDialogs[0].unreadCount + 1,
         })
         .where(eq(dialogs.id, dialogId));
+      console.log(`[Telegram] Reusing dialog #${dialogId} for account #${accountId}, contact #${contactId}`);
     } else {
-      // Create new dialog
+      // Truly new contact — create dialog for the first time
       const inserted = await db.insert(dialogs).values({
         telegramAccountId: accountId,
         contactId: contactId!,
@@ -229,7 +233,7 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
       dialogId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId ?? 0);
       console.log(`[Telegram] Created new dialog #${dialogId} for account #${accountId}, contact #${contactId}`);
 
-      // Create Bitrix24 deal for new dialog (pass accountId for per-account pipeline settings)
+      // Create Bitrix24 deal only for brand-new contacts
       await createBitrixDealForDialog(dialogId, contactId!, sender, text, accountId).catch(err =>
         console.error("[Bitrix] Failed to create deal:", err)
       );
@@ -249,7 +253,6 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
     });
     console.log(`[Telegram] Saved message to dialog #${dialogId}`);
     // ── 4. Push real-time SSE event to all connected browser clients ────────
-    const isNewDialog = openDialogs.length === 0;
     emitInboxEvent(
       isNewDialog
         ? { type: "new_dialog", dialogId, accountId }
