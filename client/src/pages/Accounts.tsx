@@ -23,12 +23,14 @@ import {
   Smartphone,
   Trash2,
   WifiOff,
+  Wifi,
   RefreshCw,
   MessageSquare,
-  Wifi,
+  Key,
   Loader2,
   Settings2,
   Phone,
+  Terminal,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -60,15 +62,15 @@ const statusConfig: Record<string, { label: string; dot: string; badge: string }
 };
 
 function buildTelegramQRUrl(tokenBase64: string): string {
-  const bytes = atob(tokenBase64);
-  let hex = "";
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes.charCodeAt(i).toString(16).padStart(2, "0");
-  }
-  return `tg://login?token=${hex}`;
+  // Telegram expects base64url encoding for the token (RFC 4648)
+  const base64url = tokenBase64
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+  return `tg://login?token=${base64url}`;
 }
 
-type LoginMode = "choose" | "qr" | "phone";
+type LoginMode = "choose" | "qr" | "phone" | "session";
 type PhoneStep = "phone" | "code" | "twofa";
 
 export default function Accounts() {
@@ -82,6 +84,10 @@ export default function Accounts() {
   const [qrExpires, setQrExpires] = useState<number | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrExpired, setQrExpired] = useState(false);
+
+  // Session string state
+  const [sessionString, setSessionString] = useState("");
+  const [sessionPhone, setSessionPhone] = useState("");
 
   // Phone login state
   const [phoneStep, setPhoneStep] = useState<PhoneStep>("phone");
@@ -162,6 +168,15 @@ export default function Accounts() {
     },
     onError: (err) => toast.error("Неверный код: " + err.message),
   });
+  const connectSessionMutation = trpc.accounts.connectSessionString.useMutation({
+    onSuccess: () => {
+      toast.success("Аккаунт успешно подключён!");
+      handleCloseDialog();
+      refetch();
+    },
+    onError: (err) => toast.error("Ошибка: " + err.message),
+  });
+
   const verifyTwoFAMutation = trpc.accounts.verifyTwoFA.useMutation({
     onSuccess: () => {
       toast.success("Аккаунт успешно подключён!");
@@ -221,6 +236,8 @@ export default function Accounts() {
     setPendingAccountId(null);
     setQrToken(null);
     setQrExpired(false);
+    setSessionString("");
+    setSessionPhone("");
   };
 
   const resetPhoneState = () => {
@@ -507,6 +524,19 @@ export default function Accounts() {
                     <p className="text-xs text-muted-foreground mt-0.5">Только через Telegram Desktop или web.telegram.org</p>
                   </div>
                 </button>
+
+                <button
+                  onClick={() => setLoginMode("session")}
+                  className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
+                >
+                  <div className="h-10 w-10 rounded-xl bg-muted/50 border border-border flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+                    <Terminal className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">Session String</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Вставьте строку сессии — самый надёжный способ</p>
+                  </div>
+                </button>
               </div>
             )}
 
@@ -559,6 +589,53 @@ export default function Accounts() {
                     Ожидание сканирования... Страница обновится автоматически
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* SESSION STRING MODE */}
+            {loginMode === "session" && (
+              <div className="flex flex-col gap-4 py-2">
+                <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-3">
+                  <p className="text-xs text-blue-300 leading-relaxed">
+                    Сгенерируйте Session String через скрипт на вашем компьютере и вставьте сюда.
+                    Это самый надёжный способ — код запрашивается с вашего IP.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Номер телефона (необязательно)</Label>
+                  <Input
+                    placeholder="+79001234567"
+                    value={sessionPhone}
+                    onChange={e => setSessionPhone(e.target.value)}
+                    className="font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Session String <span className="text-primary">*</span></Label>
+                  <textarea
+                    className="w-full min-h-[80px] rounded-lg border border-input bg-background px-3 py-2 text-xs font-mono resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="1BVtsOKABu..."
+                    value={sessionString}
+                    onChange={e => setSessionString(e.target.value)}
+                  />
+                  <p className="text-[10px] text-muted-foreground">Строка начинается с цифры и содержит буквы и символы</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setLoginMode("choose")}>
+                    ← Назад
+                  </Button>
+                  <Button
+                    className="flex-1 font-bold"
+                    onClick={() => connectSessionMutation.mutate({ sessionString, phone: sessionPhone || undefined })}
+                    disabled={connectSessionMutation.isPending || sessionString.trim().length < 10}
+                  >
+                    {connectSessionMutation.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Подключение...</>
+                    ) : (
+                      <>Подключить</>
+                    )}
+                  </Button>
+                </div>
               </div>
             )}
 

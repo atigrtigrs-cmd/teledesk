@@ -18,7 +18,7 @@ import { eq, desc, and, sql, gte, count, countDistinct } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
-import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword } from "./telegram";
+import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, connectAccount } from "./telegram";
 import { ENV } from "./_core/env";
 
 const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
@@ -184,6 +184,33 @@ export const appRouter = router({
           return { success: true };
         } catch (err: any) {
           throw new TRPCError({ code: "BAD_REQUEST", message: err?.message ?? "Invalid 2FA password" });
+        }
+      }),
+
+    connectSessionString: protectedProcedure
+      .input(z.object({
+        sessionString: z.string().min(10),
+        phone: z.string().optional(),
+        firstName: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        try {
+          // Create account record with session string
+          await db.insert(telegramAccounts).values({
+            phone: input.phone ?? "",
+            firstName: input.firstName ?? null,
+            status: "pending",
+            sessionString: input.sessionString,
+            ownerId: ctx.user.id,
+          });
+          const [acc] = await db.select().from(telegramAccounts).orderBy(desc(telegramAccounts.id)).limit(1);
+          // Connect using the session string
+          await connectAccount(acc.id, input.sessionString);
+          return { success: true, accountId: acc.id };
+        } catch (err: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err?.message ?? "Invalid session string" });
         }
       }),
   }),
