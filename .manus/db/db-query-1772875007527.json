@@ -1,0 +1,9 @@
+{
+  "query": "\n-- Move messages from duplicate dialogs to the main dialog #2\nUPDATE messages SET dialogId = 2 WHERE dialogId IN (30001, 30002);\n\n-- Update dialog #2 with the latest message info\nUPDATE dialogs SET \n  status = 'open',\n  lastMessageText = 'привет',\n  lastMessageAt = (SELECT MAX(createdAt) FROM messages WHERE dialogId = 2),\n  unreadCount = (SELECT COUNT(*) FROM messages WHERE dialogId = 2 AND isRead = 0)\nWHERE id = 2;\n\n-- Delete the duplicate dialogs\nDELETE FROM dialogs WHERE id IN (30001, 30002);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute \n-- Move messages from duplicate dialogs to the main dialog #2\nUPDATE messages SET dialogId = 2 WHERE dialogId IN (30001, 30002);\n\n-- Update dialog #2 with the latest message info\nUPDATE dialogs SET \n  status = 'open',\n  lastMessageText = 'привет',\n  lastMessageAt = (SELECT MAX(createdAt) FROM messages WHERE dialogId = 2),\n  unreadCount = (SELECT COUNT(*) FROM messages WHERE dialogId = 2 AND isRead = 0)\nWHERE id = 2;\n\n-- Delete the duplicate dialogs\nDELETE FROM dialogs WHERE id IN (30001, 30002);\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 569
+}
