@@ -76,3 +76,11 @@
 - [ ] Find deal creation code in telegram.ts / bitrix.ts
 - [ ] Load per-account bitrix settings when creating deal
 - [ ] Pass pipeline ID, stage ID, responsible ID to Bitrix24 crm.deal.add call
+
+## Critical Bug Fix: Messages Not Saving
+- [x] Diagnose why incoming messages don't appear in chat (dialog created but messages table empty)
+- [x] Found root cause: Drizzle mysql2 returns [ResultSetHeader, null] array, but code accessed .insertId directly on array (undefined), causing dialogId=0 and FK constraint failure on message insert
+- [x] Fixed: changed (inserted as any).insertId to (inserted as any)[0]?.insertId for both contacts and dialogs inserts
+- [x] Added validation: if dialogId is 0, log error and return early instead of silently failing
+- [x] Added detailed logging: "Created new dialog #X", "Saved message to dialog #X"
+- [x] Manually restored missing message for existing dialog #2 (text: "Hi")

@@ -1,0 +1,64 @@
+{
+  "query": "SHOW TABLES;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SHOW TABLES;",
+  "rows": [
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "__drizzle_migrations"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "auto_replies"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "bitrix_settings"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "categories"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "clients"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "companies"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "contacts"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "dialogs"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "knowledge_base_articles"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "messages"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "quick_replies"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "sla_rules"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "tags"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "telegram_accounts"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "ticket_comments"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "tickets"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "users"
+    },
+    {
+      "Tables_in_bdpiDWPftxaP5joCkvKLNw": "working_hours"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_bdpiDWPftxaP5joCkvKLNw\n__drizzle_migrations\nauto_replies\nbitrix_settings\ncategories\nclients\ncompanies\ncontacts\ndialogs\nknowledge_base_articles\nmessages\nquick_replies\nsla_rules\ntags\ntelegram_accounts\nticket_comments\ntickets\nusers\nworking_hours\n",
+  "stderr": "",
+  "execution_time_ms": 350
+}

@@ -185,7 +185,8 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
         lastName: sender?.lastName ?? null,
         phone: sender?.phone ?? null,
       });
-      contactId = Number((inserted as any).insertId ?? 0);
+      // Drizzle mysql2 returns [ResultSetHeader, null] — access index 0
+      contactId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId ?? 0);
     }
 
     // ── 2. Find or create open dialog ─────────────────────────────────────
@@ -224,7 +225,9 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
         lastMessageAt: new Date(),
         unreadCount: 1,
       });
-      dialogId = Number((inserted as any).insertId ?? 0);
+      // Drizzle mysql2 returns [ResultSetHeader, null] — access index 0
+      dialogId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId ?? 0);
+      console.log(`[Telegram] Created new dialog #${dialogId} for account #${accountId}, contact #${contactId}`);
 
       // Create Bitrix24 deal for new dialog (pass accountId for per-account pipeline settings)
       await createBitrixDealForDialog(dialogId, contactId!, sender, text, accountId).catch(err =>
@@ -233,6 +236,10 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
     }
 
     // ── 3. Save message ────────────────────────────────────────────────────
+    if (!dialogId) {
+      console.error(`[Telegram] dialogId is 0 or null, cannot save message. accountId=${accountId}, contactId=${contactId}`);
+      return;
+    }
     await db.insert(messages).values({
       dialogId,
       direction: "incoming",
@@ -240,8 +247,8 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
       telegramMessageId: tgMsgId,
       createdAt: new Date(Number(msg.date) * 1000),
     });
-
-    // ── 4. Push real-time SSE event to all connected browser clients ───────
+    console.log(`[Telegram] Saved message to dialog #${dialogId}`);
+    // ── 4. Push real-time SSE event to all connected browser clients ────────
     const isNewDialog = openDialogs.length === 0;
     emitInboxEvent(
       isNewDialog

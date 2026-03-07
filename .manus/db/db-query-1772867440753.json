@@ -1,0 +1,22 @@
+{
+  "query": "SELECT * FROM contacts ORDER BY id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT * FROM contacts ORDER BY id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "telegramId": "174756023",
+      "username": "AntonioValov",
+      "firstName": "Anton",
+      "lastName": "Valov",
+      "phone": "NULL",
+      "avatarUrl": "NULL",
+      "bitrixContactId": "NULL",
+      "createdAt": "2026-03-07 07:01:51",
+      "updatedAt": "2026-03-07 07:01:51"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttelegramId\tusername\tfirstName\tlastName\tphone\tavatarUrl\tbitrixContactId\tcreatedAt\tupdatedAt\n1\t174756023\tAntonioValov\tAnton\tValov\tNULL\tNULL\tNULL\t2026-03-07 07:01:51\t2026-03-07 07:01:51\n",
+  "stderr": "",
+  "execution_time_ms": 354
+}
