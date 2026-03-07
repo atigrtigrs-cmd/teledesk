@@ -94,6 +94,8 @@ export const dialogs = mysqlTable("dialogs", {
   aiSummary: text("aiSummary"),
   sentiment: mysqlEnum("sentiment", ["positive", "neutral", "negative"]),
   tagIds: json("tagIds").$type<number[]>().default([]),
+  firstResponseAt: timestamp("firstResponseAt"),
+  closedAt: timestamp("closedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -106,7 +108,7 @@ export const messages = mysqlTable("messages", {
   id: int("id").autoincrement().primaryKey(),
   dialogId: int("dialogId").notNull().references(() => dialogs.id),
   telegramMessageId: varchar("telegramMessageId", { length: 64 }),
-  direction: mysqlEnum("direction", ["incoming", "outgoing"]).notNull(),
+  direction: mysqlEnum("direction", ["incoming", "outgoing", "note"]).notNull(),
   senderId: int("senderId").references(() => users.id),
   text: text("text"),
   mediaUrl: text("mediaUrl"),

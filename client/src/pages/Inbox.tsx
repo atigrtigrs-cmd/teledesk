@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type StatusFilter = "all" | "open" | "in_progress" | "waiting" | "resolved" | "closed";
 
@@ -59,14 +61,22 @@ function getAvatarColor(name: string) {
 export default function Inbox() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
+  const [assigneeFilter, setAssigneeFilter] = useState<"all" | "mine" | "unassigned">("all");
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
 
   // SSE real-time connection — no polling needed
   const { connectionState } = useRealtimeInbox();
 
+  const assigneeId = assigneeFilter === "mine" ? user?.id : undefined;
   const { data, isLoading } = trpc.dialogs.list.useQuery(
-    { status: statusFilter, search: search || undefined }
+    { status: statusFilter, search: search || undefined, assigneeId }
   );
+
+  // Filter unassigned client-side
+  const filteredData = assigneeFilter === "unassigned"
+    ? (data ?? []).filter(r => !r.dialog.assigneeId)
+    : (data ?? []);
 
   return (
     <DashboardLayout>
@@ -112,21 +122,33 @@ export default function Inbox() {
             />
           </div>
 
-          {/* Status filters */}
-          <div className="flex gap-1.5 flex-wrap">
-            {filters.map(f => (
-              <button
-                key={f.value}
-                onClick={() => setStatusFilter(f.value)}
-                className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                  statusFilter === f.value
-                    ? "bg-primary text-primary-foreground shadow shadow-primary/30"
-                    : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
+          {/* Status filters + assignee filter */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex gap-1.5 flex-wrap flex-1">
+              {filters.map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => setStatusFilter(f.value)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                    statusFilter === f.value
+                      ? "bg-primary text-primary-foreground shadow shadow-primary/30"
+                      : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <Select value={assigneeFilter} onValueChange={(v) => setAssigneeFilter(v as typeof assigneeFilter)}>
+              <SelectTrigger className="h-7 w-36 text-xs border-border bg-muted">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все менеджеры</SelectItem>
+                <SelectItem value="mine">Мои диалоги</SelectItem>
+                <SelectItem value="unassigned">Без менеджера</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -136,7 +158,7 @@ export default function Inbox() {
             <div className="flex items-center justify-center py-20">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
-          ) : !data?.length ? (
+          ) : !filteredData?.length ? (
             <div className="flex flex-col items-center justify-center py-20 text-center px-6">
               <div className="h-14 w-14 rounded-2xl bg-primary/8 border border-primary/20 flex items-center justify-center mb-4">
                 <MessageSquare className="h-6 w-6 text-primary" />
@@ -148,7 +170,7 @@ export default function Inbox() {
             </div>
           ) : (
             <div className="divide-y divide-border/40">
-              {data.map(({ dialog, contact, account }) => {
+              {filteredData.map(({ dialog, contact, account, assignee }) => {
                 const status = statusConfig[dialog.status] ?? statusConfig.open;
                 const sentiment = dialog.sentiment ? sentimentConfig[dialog.sentiment] : null;
                 const contactName = contact
@@ -195,6 +217,14 @@ export default function Inbox() {
                           <div className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
                           <span className={`text-xs font-medium`}>{status.label}</span>
                         </div>
+                        {assignee?.name && (
+                          <span className="text-xs text-muted-foreground bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">
+                            {assignee.name.split(" ")[0]}
+                          </span>
+                        )}
+                        {!assignee && (
+                          <span className="text-xs text-muted-foreground/50">— без менеджера</span>
+                        )}
                         {account && (
                           <span className="text-xs text-muted-foreground">
                             · @{account.username ?? account.phone ?? "аккаунт"}

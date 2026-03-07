@@ -89,3 +89,15 @@
 - [x] Remove status filter from dialog lookup — find ANY existing dialog for contact, not just "open"
 - [x] If dialog exists (any status), reopen it and append message — never create a new dialog
 - [x] Update Bitrix deal creation: only create deal if no dialog existed before (truly new contact)
+
+## Manager Oversight & Analytics
+- [ ] Dialog assignment: UI to assign dialog to a manager (assigneeId already in schema)
+- [ ] "My dialogs" filter in inbox sidebar
+- [ ] Internal notes: add direction='note' type to messages (visible only to managers)
+- [ ] Search dialogs by contact name, username, last message text
+- [ ] Filter inbox by status, assignee, tag
+- [ ] Tags/labels on dialogs (color-coded)
+- [ ] Manager analytics page: dialogs handled, avg response time, messages sent, closed today/week
+- [ ] Contact profile sidebar in dialog view: name, username, phone, total dialogs, notes
+- [ ] First response time tracking (store firstResponseAt on dialog)
+- [ ] Inbox UX: show assignee avatar on dialog card

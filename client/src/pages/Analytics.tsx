@@ -28,6 +28,14 @@ const MEDAL: Record<number, string> = { 0: "🥇", 1: "🥈", 2: "🥉" };
 
 type SortKey = "dialogs" | "deals" | "messages" | "conversionRate";
 
+function formatMinutes(mins: number | null): string {
+  if (mins === null || mins === undefined) return "—";
+  if (mins < 60) return `${mins} мин`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}ч ${m}м` : `${h}ч`;
+}
+
 export default function Analytics() {
   const [period, setPeriod] = useState<Period>("week");
   const [chartPeriod, setChartPeriod] = useState<"week" | "month">("week");
@@ -37,6 +45,7 @@ export default function Analytics() {
   const { data: summary } = trpc.analytics.summary.useQuery();
   const { data: summaryByPeriod } = trpc.analytics.summaryByPeriod.useQuery({ period });
   const { data: managers, isLoading: managersLoading } = trpc.analytics.managerStats.useQuery({ period });
+  const { data: userStats, isLoading: userStatsLoading } = trpc.analytics.managerUserStats.useQuery({ period });
   const { data: daily } = trpc.analytics.dailyActivity.useQuery({ period: chartPeriod });
   const { data: recent } = trpc.analytics.recentDialogs.useQuery();
 
@@ -318,18 +327,18 @@ export default function Analytics() {
         </Card>
       </div>
 
-      {/* Manager Leaderboard Table */}
+      {/* Manager User Stats Table */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-bold flex items-center gap-2">
             <Trophy className="h-4 w-4 text-primary" />
-            Рейтинг менеджеров
+            Эффективность менеджеров
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          {managersLoading ? (
+          {userStatsLoading ? (
             <div className="p-6 text-center text-sm text-muted-foreground">Загрузка...</div>
-          ) : sorted.length === 0 ? (
+          ) : !userStats?.length ? (
             <div className="p-6 text-center text-sm text-muted-foreground">Нет данных за выбранный период</div>
           ) : (
             <div className="overflow-x-auto">
@@ -338,23 +347,88 @@ export default function Analytics() {
                   <tr className="border-b border-border/50 bg-muted/30">
                     <th className="text-left px-4 py-2.5 text-xs text-muted-foreground font-medium w-8">#</th>
                     <th className="text-left px-4 py-2.5 text-xs text-muted-foreground font-medium">Менеджер</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Назначено</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Открытых</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Закрытых</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Отправлено</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Ср. ответ</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Закрытие</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {userStats.map((u, i) => {
+                    const closeRate = u.assigned > 0 ? Math.round((u.closed / u.assigned) * 100) : 0;
+                    return (
+                      <tr key={u.userId} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3 text-lg">{MEDAL[i] ?? <span className="text-xs text-muted-foreground">{i + 1}</span>}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                              {u.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-semibold">{u.name}</div>
+                              <div className="text-xs text-muted-foreground capitalize">{u.role}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold">{u.assigned}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={u.open > 0 ? "text-blue-400" : "text-muted-foreground"}>{u.open}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={u.closed > 0 ? "text-green-400 font-bold" : "text-muted-foreground"}>{u.closed}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">{u.sentMessages}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={
+                            u.avgResponseMinutes === null ? "text-muted-foreground" :
+                            u.avgResponseMinutes <= 5 ? "text-green-400 font-bold" :
+                            u.avgResponseMinutes <= 30 ? "text-amber-400" :
+                            "text-red-400"
+                          }>
+                            {formatMinutes(u.avgResponseMinutes)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={
+                            closeRate >= 70 ? "text-green-400 font-bold" :
+                            closeRate >= 30 ? "text-amber-400 font-bold" :
+                            "text-muted-foreground"
+                          }>
+                            {u.assigned > 0 ? `${closeRate}%` : "—"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Telegram Account Leaderboard (legacy) */}
+      {sorted.length > 0 && (
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              Активность по Telegram-аккаунтам
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50 bg-muted/30">
+                    <th className="text-left px-4 py-2.5 text-xs text-muted-foreground font-medium w-8">#</th>
+                    <th className="text-left px-4 py-2.5 text-xs text-muted-foreground font-medium">Аккаунт</th>
                     <th className="text-left px-4 py-2.5 text-xs text-muted-foreground font-medium">Статус</th>
-                    {([
-                      { key: "dialogs" as SortKey, label: "Диалоги" },
-                      { key: "deals" as SortKey, label: "Сделки" },
-                      { key: "messages" as SortKey, label: "Сообщения" },
-                      { key: "conversionRate" as SortKey, label: "Конверсия" },
-                    ]).map(({ key, label }) => (
-                      <th
-                        key={key}
-                        className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium cursor-pointer hover:text-foreground select-none"
-                        onClick={() => handleSort(key)}
-                      >
-                        <span className="flex items-center justify-end gap-1">
-                          {label} <SortIcon col={key} />
-                        </span>
-                      </th>
-                    ))}
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Диалоги</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Сделки</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Конверсия</th>
                     <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Непрочитано</th>
                   </tr>
                 </thead>
@@ -364,22 +438,14 @@ export default function Analytics() {
                       <td className="px-4 py-3 text-lg">{MEDAL[i] ?? <span className="text-xs text-muted-foreground">{i + 1}</span>}</td>
                       <td className="px-4 py-3">
                         <div className="font-semibold">{m.name}</div>
-                        {m.bitrixResponsibleName && (
-                          <div className="text-xs text-muted-foreground">{m.bitrixResponsibleName}</div>
-                        )}
-                        {m.username && (
-                          <div className="text-xs text-muted-foreground">@{m.username}</div>
-                        )}
+                        {m.username && <div className="text-xs text-muted-foreground">@{m.username}</div>}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge
-                          variant="outline"
-                          className={
-                            m.status === "active" ? "border-green-500/50 text-green-400 bg-green-500/10" :
-                            m.status === "disconnected" ? "border-red-500/50 text-red-400 bg-red-500/10" :
-                            "border-muted text-muted-foreground"
-                          }
-                        >
+                        <Badge variant="outline" className={
+                          m.status === "active" ? "border-green-500/50 text-green-400 bg-green-500/10" :
+                          m.status === "disconnected" ? "border-red-500/50 text-red-400 bg-red-500/10" :
+                          "border-muted text-muted-foreground"
+                        }>
                           {m.status === "active" ? "Активен" : m.status === "disconnected" ? "Откл." : m.status}
                         </Badge>
                       </td>
@@ -387,13 +453,8 @@ export default function Analytics() {
                       <td className="px-4 py-3 text-right">
                         <span className={m.deals > 0 ? "text-amber-400 font-bold" : "text-muted-foreground"}>{m.deals}</span>
                       </td>
-                      <td className="px-4 py-3 text-right text-muted-foreground">{m.messages}</td>
                       <td className="px-4 py-3 text-right">
-                        <span className={
-                          m.conversionRate >= 50 ? "text-green-400 font-bold" :
-                          m.conversionRate >= 20 ? "text-amber-400 font-bold" :
-                          "text-muted-foreground"
-                        }>
+                        <span className={m.conversionRate >= 50 ? "text-green-400 font-bold" : m.conversionRate >= 20 ? "text-amber-400 font-bold" : "text-muted-foreground"}>
                           {m.conversionRate}%
                         </span>
                       </td>
@@ -409,9 +470,9 @@ export default function Analytics() {
                 </tbody>
               </table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
     </DashboardLayout>
   );

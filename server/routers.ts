@@ -226,15 +226,18 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { users } = await import("../drizzle/schema");
         const rows = await db
           .select({
             dialog: dialogs,
             contact: contacts,
             account: telegramAccounts,
+            assignee: { id: users.id, name: users.name },
           })
           .from(dialogs)
           .leftJoin(contacts, eq(dialogs.contactId, contacts.id))
           .leftJoin(telegramAccounts, eq(dialogs.telegramAccountId, telegramAccounts.id))
+          .leftJoin(users, eq(dialogs.assigneeId, users.id))
           .orderBy(desc(dialogs.lastMessageAt));
         return rows.filter(r => {
           if (input.status !== "all" && r.dialog.status !== input.status) return false;
@@ -390,14 +393,49 @@ export const appRouter = router({
           text: input.text,
           isRead: true,
         });
+        // Auto-assign dialog to sender if unassigned
+        const [currentDialog] = await db.select({ assigneeId: dialogs.assigneeId }).from(dialogs).where(eq(dialogs.id, input.dialogId)).limit(1);
         await db.update(dialogs).set({
           lastMessageText: input.text,
           lastMessageAt: new Date(),
           status: "in_progress",
+          ...(currentDialog?.assigneeId ? {} : { assigneeId: ctx.user.id }),
         }).where(eq(dialogs.id, input.dialogId));
+        // Track firstResponseAt: if no prior outgoing message, record now
+        const [existingOutgoing] = await db.select({ id: messages.id }).from(messages)
+          .where(and(eq(messages.dialogId, input.dialogId), eq(messages.direction, "outgoing")))
+          .orderBy(messages.createdAt).limit(1);
+        if (!existingOutgoing) {
+          await db.update(dialogs).set({ firstResponseAt: new Date() }).where(eq(dialogs.id, input.dialogId));
+        }
         const [msg] = await db.select().from(messages).orderBy(desc(messages.id)).limit(1);
         return msg;
       }),
+
+    addNote: protectedProcedure
+      .input(z.object({ dialogId: z.number(), text: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.insert(messages).values({
+          dialogId: input.dialogId,
+          direction: "note",
+          senderId: ctx.user.id,
+          text: input.text,
+          isRead: true,
+        });
+        return { success: true };
+      }),
+  }),
+
+  // ─── Users ────────────────────────────────────────────────────────────────────
+  users: router({
+    list: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { users } = await import("../drizzle/schema");
+      return db.select({ id: users.id, name: users.name, email: users.email, role: users.role, avatarUrl: users.avatarUrl }).from(users);
+    }),
   }),
 
   // ─── Quick Replies ───────────────────────────────────────────────────────────
@@ -637,6 +675,65 @@ export const appRouter = router({
           .groupBy(sql`DATE(${dialogs.createdAt})`, dialogs.telegramAccountId);
 
         return rows;
+      }),
+
+    // Per-user (manager) stats: assigned dialogs, response time, closed
+    managerUserStats: protectedProcedure
+      .input(z.object({ period: z.enum(["today", "week", "month", "all"]).default("week") }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const { users } = await import("../drizzle/schema");
+
+        const now = new Date();
+        let since: Date | null = null;
+        if (input.period === "today") since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        else if (input.period === "week") since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        else if (input.period === "month") since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        const allUsers = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users);
+
+        const stats = await Promise.all(allUsers.map(async (u) => {
+          const baseFilter = since
+            ? and(eq(dialogs.assigneeId, u.id), gte(dialogs.createdAt, since))
+            : eq(dialogs.assigneeId, u.id);
+
+          const [assigned] = await db.select({ count: count() }).from(dialogs).where(baseFilter);
+
+          const [closed] = await db.select({ count: count() }).from(dialogs)
+            .where(since
+              ? and(eq(dialogs.assigneeId, u.id), sql`${dialogs.status} IN ('resolved','closed')`, gte(dialogs.createdAt, since))
+              : and(eq(dialogs.assigneeId, u.id), sql`${dialogs.status} IN ('resolved','closed')`));
+
+          const [open] = await db.select({ count: count() }).from(dialogs)
+            .where(and(eq(dialogs.assigneeId, u.id), sql`${dialogs.status} NOT IN ('resolved','closed')`));
+
+          // Avg first response time in minutes
+          const [avgResp] = await db.select({
+            avg: sql<number>`AVG(TIMESTAMPDIFF(MINUTE, ${dialogs.createdAt}, ${dialogs.firstResponseAt}))`
+          }).from(dialogs)
+            .where(since
+              ? and(eq(dialogs.assigneeId, u.id), sql`${dialogs.firstResponseAt} IS NOT NULL`, gte(dialogs.createdAt, since))
+              : and(eq(dialogs.assigneeId, u.id), sql`${dialogs.firstResponseAt} IS NOT NULL`));
+
+          const [sentMsgs] = await db.select({ count: count() }).from(messages)
+            .where(since
+              ? and(eq(messages.senderId, u.id), eq(messages.direction, "outgoing"), gte(messages.createdAt, since))
+              : and(eq(messages.senderId, u.id), eq(messages.direction, "outgoing")));
+
+          return {
+            userId: u.id,
+            name: u.name ?? u.email ?? `User #${u.id}`,
+            role: u.role,
+            assigned: Number(assigned?.count ?? 0),
+            closed: Number(closed?.count ?? 0),
+            open: Number(open?.count ?? 0),
+            sentMessages: Number(sentMsgs?.count ?? 0),
+            avgResponseMinutes: avgResp?.avg != null ? Math.round(Number(avgResp.avg)) : null,
+          };
+        }));
+
+        return stats.sort((a, b) => b.assigned - a.assigned);
       }),
 
     // Summary with period filter
