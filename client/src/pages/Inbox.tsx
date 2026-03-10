@@ -9,6 +9,7 @@ import {
   Wifi,
   WifiOff,
   Tag,
+  Bot,
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -64,22 +65,40 @@ export default function Inbox() {
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState<"all" | "mine" | "unassigned">("all");
   const [selectedTagId, setSelectedTagId] = useState<number | undefined>(undefined);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | undefined>(undefined);
   const [, setLocation] = useLocation();
   const { user } = useAuth();
 
   // SSE real-time connection — no polling needed
   const { connectionState } = useRealtimeInbox();
   const { data: allTags } = trpc.tags.list.useQuery();
+  const { data: allAccounts } = trpc.accounts.list.useQuery();
 
   const assigneeId = assigneeFilter === "mine" ? user?.id : undefined;
   const { data, isLoading } = trpc.dialogs.list.useQuery(
-    { status: statusFilter, search: search || undefined, assigneeId, tagId: selectedTagId }
+    {
+      status: statusFilter,
+      search: search || undefined,
+      assigneeId,
+      tagId: selectedTagId,
+      telegramAccountId: selectedAccountId,
+    }
   );
 
   // Filter unassigned client-side
   const filteredData = assigneeFilter === "unassigned"
     ? (data ?? []).filter(r => !r.dialog.assigneeId)
     : (data ?? []);
+
+  // Build account display name
+  function accountName(acc: { firstName?: string | null; lastName?: string | null; username?: string | null; phone?: string | null; id: number }) {
+    if (acc.firstName || acc.lastName) {
+      return `${acc.firstName ?? ""} ${acc.lastName ?? ""}`.trim();
+    }
+    if (acc.username) return `@${acc.username}`;
+    if (acc.phone) return acc.phone;
+    return `Аккаунт #${acc.id}`;
+  }
 
   return (
     <DashboardLayout>
@@ -109,7 +128,7 @@ export default function Inbox() {
                 </span>
               )}
               <span className="text-xs font-bold text-muted-foreground bg-muted px-3 py-1.5 rounded-full border border-border">
-                {data?.length ?? 0} диалогов
+                {filteredData?.length ?? 0} диалогов
               </span>
             </div>
           </div>
@@ -125,7 +144,7 @@ export default function Inbox() {
             />
           </div>
 
-          {/* Status filters + assignee filter */}
+          {/* Status filters + assignee filter + account filter */}
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex gap-1.5 flex-wrap flex-1">
               {filters.map(f => (
@@ -152,7 +171,28 @@ export default function Inbox() {
                 <SelectItem value="unassigned">Без менеджера</SelectItem>
               </SelectContent>
             </Select>
+            {/* Telegram account filter */}
+            {allAccounts && allAccounts.length > 0 && (
+              <Select
+                value={selectedAccountId !== undefined ? String(selectedAccountId) : "all"}
+                onValueChange={(v) => setSelectedAccountId(v === "all" ? undefined : Number(v))}
+              >
+                <SelectTrigger className="h-7 w-44 text-xs border-border bg-muted">
+                  <Bot className="h-3 w-3 mr-1 text-muted-foreground shrink-0" />
+                  <SelectValue placeholder="Все аккаунты" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все аккаунты</SelectItem>
+                  {allAccounts.map(acc => (
+                    <SelectItem key={acc.id} value={String(acc.id)}>
+                      {accountName(acc)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
+
           {/* Tag filters */}
           {allTags && allTags.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap mt-2">
@@ -257,8 +297,8 @@ export default function Inbox() {
                           <span className="text-xs text-muted-foreground/50">— без менеджера</span>
                         )}
                         {account && (
-                          <span className="text-xs text-muted-foreground">
-                            · @{account.username ?? account.phone ?? "аккаунт"}
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            · <Bot className="h-2.5 w-2.5" /> {account.username ? `@${account.username}` : (account.firstName ?? account.phone ?? `#${account.id}`)}
                           </span>
                         )}
                       </div>

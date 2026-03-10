@@ -102,6 +102,10 @@
 - [ ] First response time tracking (store firstResponseAt on dialog)
 - [ ] Inbox UX: show assignee avatar on dialog card
 
+## Inbox Telegram Account Filter
+- [x] Add telegramAccountId filter to dialogs.list backend procedure
+- [x] Add Telegram account filter dropdown to Inbox UI
+
 ## Custom Auth (Email/Password)
 - [ ] Add passwordHash field to users table
 - [ ] Add auth.login procedure (email + password)

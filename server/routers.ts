@@ -224,6 +224,7 @@ export const appRouter = router({
         assigneeId: z.number().optional(),
         search: z.string().optional(),
         tagId: z.number().optional(),
+        telegramAccountId: z.number().optional(),
       }))
       .query(async ({ input }) => {
         const db = await getDb();
@@ -252,6 +253,7 @@ export const appRouter = router({
         return rows.filter(r => {
           if (input.status !== "all" && r.dialog.status !== input.status) return false;
           if (input.assigneeId && r.dialog.assigneeId !== input.assigneeId) return false;
+          if (input.telegramAccountId && r.dialog.telegramAccountId !== input.telegramAccountId) return false;
           if (tagDialogIds !== null && !tagDialogIds.has(r.dialog.id)) return false;
           if (input.search) {
             const q = input.search.toLowerCase();
