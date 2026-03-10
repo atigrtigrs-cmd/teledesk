@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
 import {
@@ -10,13 +11,35 @@ import {
   WifiOff,
   Tag,
   Bot,
+  CheckSquare,
+  Square,
+  X,
+  ChevronDown,
+  UserCheck,
+  UserX,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 
 type StatusFilter = "all" | "open" | "in_progress" | "waiting" | "resolved" | "closed";
+type DialogStatus = "open" | "in_progress" | "waiting" | "resolved" | "closed";
 
 const statusConfig: Record<string, { label: string; color: string; dot: string }> = {
   open: { label: "Открыт", color: "bg-blue-500/10 text-blue-400 border-blue-500/20", dot: "bg-blue-400" },
@@ -25,6 +48,14 @@ const statusConfig: Record<string, { label: string; color: string; dot: string }
   resolved: { label: "Решён", color: "bg-green-500/10 text-green-400 border-green-500/20", dot: "bg-green-400" },
   closed: { label: "Закрыт", color: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground" },
 };
+
+const bulkStatusOptions: { label: string; value: DialogStatus; dot: string }[] = [
+  { label: "Открыт", value: "open", dot: "bg-blue-400" },
+  { label: "В работе", value: "in_progress", dot: "bg-primary" },
+  { label: "Ожидает", value: "waiting", dot: "bg-orange-400" },
+  { label: "Решён", value: "resolved", dot: "bg-green-400" },
+  { label: "Закрыт", value: "closed", dot: "bg-muted-foreground" },
+];
 
 const sentimentConfig: Record<string, { emoji: string; color: string }> = {
   positive: { emoji: "😊", color: "text-green-400" },
@@ -69,26 +100,77 @@ export default function Inbox() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
 
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkMode, setBulkMode] = useState(false);
+
   // SSE real-time connection — no polling needed
   const { connectionState } = useRealtimeInbox();
   const { data: allTags } = trpc.tags.list.useQuery();
   const { data: allAccounts } = trpc.accounts.list.useQuery();
+  const { data: allUsers } = trpc.users.list.useQuery();
+
+  const utils = trpc.useUtils();
 
   const assigneeId = assigneeFilter === "mine" ? user?.id : undefined;
-  const { data, isLoading } = trpc.dialogs.list.useQuery(
-    {
-      status: statusFilter,
-      search: search || undefined,
-      assigneeId,
-      tagId: selectedTagId,
-      telegramAccountId: selectedAccountId,
-    }
-  );
+  const { data, isLoading } = trpc.dialogs.list.useQuery({
+    status: statusFilter,
+    search: search || undefined,
+    assigneeId,
+    tagId: selectedTagId,
+    telegramAccountId: selectedAccountId,
+  });
+
+  // Bulk mutations
+  const bulkUpdateStatus = trpc.dialogs.bulkUpdateStatus.useMutation({
+    onSuccess: (res) => {
+      toast.success(`Статус изменён для ${res.updated} диалогов`);
+      utils.dialogs.list.invalidate();
+      clearSelection();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const bulkAssign = trpc.dialogs.bulkAssign.useMutation({
+    onSuccess: (res) => {
+      toast.success(`Назначено для ${res.updated} диалогов`);
+      utils.dialogs.list.invalidate();
+      clearSelection();
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   // Filter unassigned client-side
   const filteredData = assigneeFilter === "unassigned"
     ? (data ?? []).filter(r => !r.dialog.assigneeId)
     : (data ?? []);
+
+  const allIds = filteredData.map(r => r.dialog.id);
+  const allSelected = allIds.length > 0 && allIds.every(id => selectedIds.has(id));
+  const someSelected = selectedIds.size > 0;
+
+  const toggleSelectAll = useCallback(() => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allIds));
+    }
+  }, [allSelected, allIds]);
+
+  const toggleSelect = useCallback((id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setBulkMode(false);
+  };
 
   // Build account display name
   function accountName(acc: { firstName?: string | null; lastName?: string | null; username?: string | null; phone?: string | null; id: number }) {
@@ -102,7 +184,7 @@ export default function Inbox() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full relative">
         {/* Header */}
         <div className="px-6 pt-6 pb-4 border-b border-border">
           <div className="flex items-center justify-between mb-4">
@@ -130,6 +212,18 @@ export default function Inbox() {
               <span className="text-xs font-bold text-muted-foreground bg-muted px-3 py-1.5 rounded-full border border-border">
                 {filteredData?.length ?? 0} диалогов
               </span>
+              {/* Bulk mode toggle */}
+              <button
+                onClick={() => { setBulkMode(v => !v); setSelectedIds(new Set()); }}
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border transition-all ${
+                  bulkMode
+                    ? "bg-primary text-primary-foreground border-primary shadow shadow-primary/30"
+                    : "bg-muted text-muted-foreground border-border hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                <CheckSquare className="h-3.5 w-3.5" />
+                Выбрать
+              </button>
             </div>
           </div>
 
@@ -146,6 +240,19 @@ export default function Inbox() {
 
           {/* Status filters + assignee filter + account filter */}
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Select all checkbox (shown in bulk mode) */}
+            {bulkMode && (
+              <button
+                onClick={toggleSelectAll}
+                className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              >
+                {allSelected
+                  ? <CheckSquare className="h-4 w-4 text-primary" />
+                  : <Square className="h-4 w-4" />
+                }
+                Все
+              </button>
+            )}
             <div className="flex gap-1.5 flex-wrap flex-1">
               {filters.map(f => (
                 <button
@@ -224,7 +331,7 @@ export default function Inbox() {
         </div>
 
         {/* Dialog List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-24">
           {isLoading ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -248,17 +355,42 @@ export default function Inbox() {
                   ? `${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim() || contact.username || contact.phone || "Неизвестный"
                   : "Неизвестный";
                 const avatarColor = getAvatarColor(contactName);
+                const isSelected = selectedIds.has(dialog.id);
 
                 return (
-                  <button
+                  <div
                     key={dialog.id}
-                    onClick={() => setLocation(`/inbox/${dialog.id}`)}
-                    className="w-full px-6 py-4 hover:bg-accent/20 transition-colors text-left flex items-start gap-3 group"
+                    className={`w-full px-6 py-4 transition-colors text-left flex items-start gap-3 group cursor-pointer ${
+                      isSelected
+                        ? "bg-primary/8 border-l-2 border-primary"
+                        : "hover:bg-accent/20 border-l-2 border-transparent"
+                    }`}
+                    onClick={() => {
+                      if (bulkMode) {
+                        setSelectedIds(prev => {
+                          const next = new Set(prev);
+                          if (next.has(dialog.id)) next.delete(dialog.id);
+                          else next.add(dialog.id);
+                          return next;
+                        });
+                      } else {
+                        setLocation(`/inbox/${dialog.id}`);
+                      }
+                    }}
                   >
-                    {/* Avatar */}
-                    <div className={`h-10 w-10 rounded-full ${avatarColor} flex items-center justify-center text-white font-black text-sm shrink-0 mt-0.5 shadow`}>
-                      {contactName.charAt(0).toUpperCase()}
-                    </div>
+                    {/* Checkbox (bulk mode) or Avatar */}
+                    {bulkMode ? (
+                      <div className="h-10 w-10 flex items-center justify-center shrink-0 mt-0.5">
+                        {isSelected
+                          ? <CheckSquare className="h-5 w-5 text-primary" />
+                          : <Square className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                        }
+                      </div>
+                    ) : (
+                      <div className={`h-10 w-10 rounded-full ${avatarColor} flex items-center justify-center text-white font-black text-sm shrink-0 mt-0.5 shadow`}>
+                        {contactName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
@@ -286,7 +418,7 @@ export default function Inbox() {
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-1.5">
                           <div className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
-                          <span className={`text-xs font-medium`}>{status.label}</span>
+                          <span className="text-xs font-medium">{status.label}</span>
                         </div>
                         {assignee?.name && (
                           <span className="text-xs text-muted-foreground bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">
@@ -303,12 +435,110 @@ export default function Inbox() {
                         )}
                       </div>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
           )}
         </div>
+
+        {/* Floating Bulk Action Toolbar */}
+        {someSelected && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-card border border-border rounded-2xl shadow-2xl px-4 py-3 animate-in slide-in-from-bottom-4 duration-200">
+            <span className="text-sm font-bold text-foreground mr-1">
+              {selectedIds.size} выбрано
+            </span>
+
+            {/* Change status dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-bold gap-1.5 bg-muted border-border"
+                  disabled={bulkUpdateStatus.isPending}
+                >
+                  {bulkUpdateStatus.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      Статус
+                      <ChevronDown className="h-3 w-3" />
+                    </>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="w-44">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">Изменить статус</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {bulkStatusOptions.map(opt => (
+                  <DropdownMenuItem
+                    key={opt.value}
+                    className="text-xs gap-2 cursor-pointer"
+                    onClick={() => bulkUpdateStatus.mutate({ ids: Array.from(selectedIds), status: opt.value })}
+                  >
+                    <div className={`h-2 w-2 rounded-full ${opt.dot} shrink-0`} />
+                    {opt.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Assign manager dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-bold gap-1.5 bg-muted border-border"
+                  disabled={bulkAssign.isPending}
+                >
+                  {bulkAssign.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <UserCheck className="h-3.5 w-3.5" />
+                      Менеджер
+                      <ChevronDown className="h-3 w-3" />
+                    </>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="w-48">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">Назначить менеджера</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {allUsers?.map(u => (
+                  <DropdownMenuItem
+                    key={u.id}
+                    className="text-xs gap-2 cursor-pointer"
+                    onClick={() => bulkAssign.mutate({ ids: Array.from(selectedIds), assigneeId: u.id })}
+                  >
+                    <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold shrink-0">
+                      {(u.name ?? "?").charAt(0).toUpperCase()}
+                    </div>
+                    {u.name ?? u.email}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-xs gap-2 cursor-pointer text-muted-foreground"
+                  onClick={() => bulkAssign.mutate({ ids: Array.from(selectedIds), assigneeId: null })}
+                >
+                  <UserX className="h-3.5 w-3.5" />
+                  Снять назначение
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Clear selection */}
+            <button
+              onClick={clearSelection}
+              className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ml-1"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

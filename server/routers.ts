@@ -476,6 +476,34 @@ export const appRouter = router({
         });
         return { success: true };
       }),
+
+    bulkUpdateStatus: protectedProcedure
+      .input(z.object({
+        ids: z.array(z.number()).min(1),
+        status: z.enum(["open", "in_progress", "waiting", "resolved", "closed"]),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(dialogs)
+          .set({ status: input.status })
+          .where(inArray(dialogs.id, input.ids));
+        return { updated: input.ids.length };
+      }),
+
+    bulkAssign: protectedProcedure
+      .input(z.object({
+        ids: z.array(z.number()).min(1),
+        assigneeId: z.number().nullable(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(dialogs)
+          .set({ assigneeId: input.assigneeId })
+          .where(inArray(dialogs.id, input.ids));
+        return { updated: input.ids.length };
+      }),
   }),
 
   // ─── Users ────────────────────────────────────────────────────────────────────
