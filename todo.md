@@ -101,3 +101,12 @@
 - [ ] Contact profile sidebar in dialog view: name, username, phone, total dialogs, notes
 - [ ] First response time tracking (store firstResponseAt on dialog)
 - [ ] Inbox UX: show assignee avatar on dialog card
+
+## Custom Auth (Email/Password)
+- [ ] Add passwordHash field to users table
+- [ ] Add auth.login procedure (email + password)
+- [ ] Add auth.register procedure (admin-only)
+- [ ] Update auth.me to work without Manus OAuth
+- [ ] Update Home.tsx with login form
+- [ ] Update DashboardLayout to use custom auth
+- [ ] Remove Manus OAuth dependency from frontend
