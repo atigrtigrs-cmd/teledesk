@@ -1,0 +1,46 @@
+{
+  "query": "SELECT id, firstName, lastName, username, phone, telegramId, status FROM telegram_accounts ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, firstName, lastName, username, phone, telegramId, status FROM telegram_accounts ORDER BY id;",
+  "rows": [
+    {
+      "id": "120002",
+      "firstName": "LC",
+      "lastName": "Support",
+      "username": "lilkek_support",
+      "phone": "79951297764",
+      "telegramId": "8388697379",
+      "status": "active"
+    },
+    {
+      "id": "150001",
+      "firstName": "Менеджер LeadCash",
+      "lastName": "NULL",
+      "username": "affiliate_LeadCash",
+      "phone": "79059365077",
+      "telegramId": "7480546401",
+      "status": "active"
+    },
+    {
+      "id": "150002",
+      "firstName": "Ulyana",
+      "lastName": "LeadCash",
+      "username": "LeadCash_Affiliate",
+      "phone": "79231776601",
+      "telegramId": "5547473306",
+      "status": "active"
+    },
+    {
+      "id": "150004",
+      "firstName": "Irina",
+      "lastName": "Koripenko",
+      "username": "LeadCash_manager",
+      "phone": "79059374229",
+      "telegramId": "7966871800",
+      "status": "active"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\tusername\tphone\ttelegramId\tstatus\n120002\tLC\tSupport\tlilkek_support\t79951297764\t8388697379\tactive\n150001\tМенеджер LeadCash\tNULL\taffiliate_LeadCash\t79059365077\t7480546401\tactive\n150002\tUlyana\tLeadCash\tLeadCash_Affiliate\t79231776601\t5547473306\tactive\n150004\tIrina\tKoripenko\tLeadCash_manager\t79059374229\t7966871800\tactive\n",
+  "stderr": "",
+  "execution_time_ms": 114
+}

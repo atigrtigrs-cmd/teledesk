@@ -1,0 +1,16 @@
+{
+  "query": "SELECT id, firstName, username, telegramId FROM telegram_accounts WHERE telegramId = '7966871800';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, firstName, username, telegramId FROM telegram_accounts WHERE telegramId = '7966871800';",
+  "rows": [
+    {
+      "id": "150004",
+      "firstName": "Irina",
+      "username": "LeadCash_manager",
+      "telegramId": "7966871800"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tusername\ttelegramId\n150004\tIrina\tLeadCash_manager\t7966871800\n",
+  "stderr": "",
+  "execution_time_ms": 59
+}

@@ -15,7 +15,7 @@ import {
   tags,
   dialogTags,
 } from "../drizzle/schema";
-import { eq, desc, and, sql, gte, count, countDistinct } from "drizzle-orm";
+import { eq, desc, and, sql, gte, count, countDistinct, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
@@ -300,6 +300,30 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    bulkUpdateStatus: protectedProcedure
+      .input(z.object({
+        ids: z.array(z.number()).min(1).max(500),
+        status: z.enum(["open", "in_progress", "waiting", "resolved", "closed"]),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(dialogs).set({ status: input.status }).where(inArray(dialogs.id, input.ids));
+        return { success: true, updated: input.ids.length };
+      }),
+
+    bulkAssign: protectedProcedure
+      .input(z.object({
+        ids: z.array(z.number()).min(1).max(500),
+        assigneeId: z.number().nullable(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(dialogs).set({ assigneeId: input.assigneeId }).where(inArray(dialogs.id, input.ids));
+        return { success: true, updated: input.ids.length };
+      }),
+
     assign: protectedProcedure
       .input(z.object({ id: z.number(), assigneeId: z.number().nullable() }))
       .mutation(async ({ input }) => {
@@ -396,17 +420,20 @@ export const appRouter = router({
           .where(eq(dialogs.id, input.dialogId))
           .limit(1);
 
-        // Try to send via Telegram MTProto
+        // Try to send via Telegram MTProto — throw if delivery fails
         if (dialogRow?.dialog.telegramAccountId && dialogRow?.contact?.telegramId) {
-          try {
-            await sendTelegramMessage(
-              dialogRow.dialog.telegramAccountId,
-              dialogRow.contact.telegramId,
-              input.text
-            );
-          } catch (err) {
-            console.error("[Send] Telegram send failed:", err);
-          }
+          await sendTelegramMessage(
+            dialogRow.dialog.telegramAccountId,
+            dialogRow.contact.telegramId,
+            input.text
+          ).catch((err: any) => {
+            const msg = err?.message ?? String(err);
+            console.error("[Send] Telegram send failed:", msg);
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: `Сообщение не доставлено: ${msg}`,
+            });
+          });
         }
 
         await db.insert(messages).values({

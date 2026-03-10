@@ -123,3 +123,9 @@
 - [ ] Update Home.tsx with login form
 - [ ] Update DashboardLayout to use custom auth
 - [ ] Remove Manus OAuth dependency from frontend
+
+## Bulk Dialog Actions
+- [ ] Add dialogs.bulkUpdateStatus tRPC procedure
+- [ ] Add checkbox on each dialog card in Inbox
+- [ ] Add select-all checkbox in Inbox header
+- [ ] Add floating bulk action toolbar (change status, assign manager)

@@ -527,7 +527,24 @@ export async function sendTelegramMessage(
   const client = activeClients.get(accountId);
   if (!client) throw new Error(`Account #${accountId} is not connected`);
 
-  await client.sendMessage(telegramContactId, { message: text });
+  // For group chats imported via JSON export, telegramId starts with 'group_'
+  // These cannot be sent to via MTProto without a proper peer resolution
+  if (telegramContactId.startsWith("group_")) {
+    throw new Error(`Cannot send to group contact ${telegramContactId} — use the Telegram app directly`);
+  }
+
+  // Resolve entity by numeric ID to ensure correct peer
+  const numericId = parseInt(telegramContactId, 10);
+  if (isNaN(numericId)) throw new Error(`Invalid telegramContactId: ${telegramContactId}`);
+
+  try {
+    const entity = await client.getInputEntity(numericId);
+    await client.sendMessage(entity, { message: text });
+    console.log(`[Telegram] Sent message to ${telegramContactId} via account #${accountId}`);
+  } catch (err: any) {
+    console.error(`[Telegram] sendMessage failed for ${telegramContactId}:`, err?.message ?? err);
+    throw new Error(`Telegram send failed: ${err?.message ?? String(err)}`);
+  }
 }
 
 // ─── Create Bitrix24 deal for new dialog ─────────────────────────────────────

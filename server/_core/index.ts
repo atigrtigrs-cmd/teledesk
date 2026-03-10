@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { sseHandler } from "../sse";
+import { restoreAllSessions } from "../telegram";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -62,6 +63,10 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    // Restore all active Telegram sessions after server is up
+    restoreAllSessions().catch(err =>
+      console.error("[Startup] Failed to restore Telegram sessions:", err)
+    );
   });
 }
 
