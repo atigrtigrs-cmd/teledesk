@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE dialogs d\nJOIN (\n  SELECT m.dialogId, m.direction\n  FROM messages m\n  INNER JOIN (\n    SELECT dialogId, MAX(createdAt) as maxDate\n    FROM messages GROUP BY dialogId\n  ) latest ON m.dialogId = latest.dialogId AND m.createdAt = latest.maxDate\n) last_msg ON d.id = last_msg.dialogId\nSET d.status = 'waiting'\nWHERE last_msg.direction = 'outgoing'\n  AND d.lastMessageAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)\n  AND d.status = 'open';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute UPDATE dialogs d\nJOIN (\n  SELECT m.dialogId, m.direction\n  FROM messages m\n  INNER JOIN (\n    SELECT dialogId, MAX(createdAt) as maxDate\n    FROM messages GROUP BY dialogId\n  ) latest ON m.dialogId = latest.dialogId AND m.createdAt = latest.maxDate\n) last_msg ON d.id = last_msg.dialogId\nSET d.status = 'waiting'\nWHERE last_msg.direction = 'outgoing'\n  AND d.lastMessageAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)\n  AND d.status = 'open';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 152
+}

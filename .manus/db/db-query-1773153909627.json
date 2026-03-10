@@ -1,0 +1,20 @@
+{
+  "query": "SELECT TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = 'dialogs' AND TABLE_SCHEMA = DATABASE();",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = 'dialogs' AND TABLE_SCHEMA = DATABASE();",
+  "rows": [
+    {
+      "TABLE_NAME": "messages",
+      "COLUMN_NAME": "dialogId",
+      "CONSTRAINT_NAME": "messages_dialogId_fk"
+    },
+    {
+      "TABLE_NAME": "dialog_tags",
+      "COLUMN_NAME": "dialogId",
+      "CONSTRAINT_NAME": "fk_1"
+    }
+  ],
+  "messages": [],
+  "stdout": "TABLE_NAME\tCOLUMN_NAME\tCONSTRAINT_NAME\nmessages\tdialogId\tmessages_dialogId_fk\ndialog_tags\tdialogId\tfk_1\n",
+  "stderr": "",
+  "execution_time_ms": 73
+}

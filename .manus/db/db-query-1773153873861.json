@@ -1,0 +1,50 @@
+{
+  "query": "SELECT d.id as dialogId, COUNT(m.id) as msgCount FROM dialogs d LEFT JOIN messages m ON m.dialogId = d.id WHERE d.telegramAccountId = 150002 GROUP BY d.id HAVING msgCount > 0 LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT d.id as dialogId, COUNT(m.id) as msgCount FROM dialogs d LEFT JOIN messages m ON m.dialogId = d.id WHERE d.telegramAccountId = 150002 GROUP BY d.id HAVING msgCount > 0 LIMIT 10;",
+  "rows": [
+    {
+      "dialogId": "180147",
+      "msgCount": "152"
+    },
+    {
+      "dialogId": "180150",
+      "msgCount": "12"
+    },
+    {
+      "dialogId": "180148",
+      "msgCount": "64"
+    },
+    {
+      "dialogId": "180158",
+      "msgCount": "240"
+    },
+    {
+      "dialogId": "180151",
+      "msgCount": "28"
+    },
+    {
+      "dialogId": "180164",
+      "msgCount": "28"
+    },
+    {
+      "dialogId": "180149",
+      "msgCount": "166"
+    },
+    {
+      "dialogId": "180157",
+      "msgCount": "3"
+    },
+    {
+      "dialogId": "180153",
+      "msgCount": "159"
+    },
+    {
+      "dialogId": "180159",
+      "msgCount": "63"
+    }
+  ],
+  "messages": [],
+  "stdout": "dialogId\tmsgCount\n180147\t152\n180150\t12\n180148\t64\n180158\t240\n180151\t28\n180164\t28\n180149\t166\n180157\t3\n180153\t159\n180159\t63\n",
+  "stderr": "",
+  "execution_time_ms": 83
+}

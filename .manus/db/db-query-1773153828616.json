@@ -1,0 +1,9 @@
+{
+  "query": "DELETE m FROM messages m JOIN dialogs d ON m.dialogId = d.id WHERE d.telegramAccountId = 150002;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute DELETE m FROM messages m JOIN dialogs d ON m.dialogId = d.id WHERE d.telegramAccountId = 150002;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 99
+}

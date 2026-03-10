@@ -38,8 +38,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
-type StatusFilter = "all" | "open" | "in_progress" | "waiting" | "resolved" | "closed";
-type DialogStatus = "open" | "in_progress" | "waiting" | "resolved" | "closed";
+type StatusFilter = "all" | "open" | "in_progress" | "waiting" | "needs_reply" | "resolved" | "closed" | "archived";
+type DialogStatus = "open" | "in_progress" | "waiting" | "needs_reply" | "resolved" | "closed" | "archived";
 
 const statusConfig: Record<string, { label: string; color: string; dot: string }> = {
   open: { label: "Открыт", color: "bg-blue-500/10 text-blue-400 border-blue-500/20", dot: "bg-blue-400" },
@@ -47,6 +47,8 @@ const statusConfig: Record<string, { label: string; color: string; dot: string }
   waiting: { label: "Ожидает", color: "bg-orange-500/10 text-orange-400 border-orange-500/20", dot: "bg-orange-400" },
   resolved: { label: "Решён", color: "bg-green-500/10 text-green-400 border-green-500/20", dot: "bg-green-400" },
   closed: { label: "Закрыт", color: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground" },
+  needs_reply: { label: "Требует ответа", color: "bg-red-500/10 text-red-400 border-red-500/20", dot: "bg-red-400" },
+  archived: { label: "Архив", color: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20", dot: "bg-zinc-500" },
 };
 
 const bulkStatusOptions: { label: string; value: DialogStatus; dot: string }[] = [
@@ -55,6 +57,8 @@ const bulkStatusOptions: { label: string; value: DialogStatus; dot: string }[] =
   { label: "Ожидает", value: "waiting", dot: "bg-orange-400" },
   { label: "Решён", value: "resolved", dot: "bg-green-400" },
   { label: "Закрыт", value: "closed", dot: "bg-muted-foreground" },
+  { label: "Требует ответа", value: "needs_reply", dot: "bg-red-400" },
+  { label: "Архив", value: "archived", dot: "bg-zinc-500" },
 ];
 
 const sentimentConfig: Record<string, { emoji: string; color: string }> = {
@@ -65,10 +69,12 @@ const sentimentConfig: Record<string, { emoji: string; color: string }> = {
 
 const filters: { label: string; value: StatusFilter }[] = [
   { label: "Все", value: "all" },
+  { label: "Требует ответа", value: "needs_reply" },
   { label: "Открытые", value: "open" },
   { label: "В работе", value: "in_progress" },
   { label: "Ожидают", value: "waiting" },
   { label: "Решённые", value: "resolved" },
+  { label: "Архив", value: "archived" },
 ];
 
 function formatDate(date: Date | null | undefined): { short: string; full: string } {

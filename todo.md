@@ -139,3 +139,11 @@
 - [x] Add senderName column to messages table
 - [x] Show sender name above each message bubble in DialogDetail
 - [x] Re-import exports with senderName from JSON
+
+## Auto Dialog Status Assignment
+- [x] SQL: set status=needs_reply where last msg is incoming and < 30 days
+- [x] SQL: set status=waiting where last msg is outgoing and < 30 days
+- [x] SQL: set status=archived where last msg > 30 days
+- [x] Add needs_reply and archived to dialog status enum in schema
+- [x] Add "Требует ответа" and "Архив" filter tabs in Inbox
+- [x] Color-code status badges in dialog cards

@@ -1,0 +1,26 @@
+{
+  "query": "SELECT status, COUNT(*) as count FROM dialogs GROUP BY status ORDER BY count DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT status, COUNT(*) as count FROM dialogs GROUP BY status ORDER BY count DESC;",
+  "rows": [
+    {
+      "status": "archived",
+      "count": "441"
+    },
+    {
+      "status": "open",
+      "count": "250"
+    },
+    {
+      "status": "needs_reply",
+      "count": "82"
+    },
+    {
+      "status": "waiting",
+      "count": "75"
+    }
+  ],
+  "messages": [],
+  "stdout": "status\tcount\narchived\t441\nopen\t250\nneeds_reply\t82\nwaiting\t75\n",
+  "stderr": "",
+  "execution_time_ms": 62
+}

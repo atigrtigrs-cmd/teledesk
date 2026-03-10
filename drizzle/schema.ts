@@ -89,7 +89,7 @@ export const dialogs = mysqlTable("dialogs", {
   telegramAccountId: int("telegramAccountId").references(() => telegramAccounts.id),
   contactId: int("contactId").references(() => contacts.id),
   assigneeId: int("assigneeId").references(() => users.id),
-  status: mysqlEnum("status", ["open", "in_progress", "waiting", "resolved", "closed"]).default("open").notNull(),
+  status: mysqlEnum("status", ["open", "in_progress", "waiting", "needs_reply", "resolved", "closed", "archived"]).default("open").notNull(),
   lastMessageAt: timestamp("lastMessageAt"),
   lastMessageText: text("lastMessageText"),
   unreadCount: int("unreadCount").default(0).notNull(),

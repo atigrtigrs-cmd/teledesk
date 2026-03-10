@@ -1,0 +1,18 @@
+{
+  "query": "SHOW COLUMNS FROM dialogs LIKE 'status';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SHOW COLUMNS FROM dialogs LIKE 'status';",
+  "rows": [
+    {
+      "Field": "status",
+      "Type": "enum('open','in_progress','waiting','resolved','closed')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "open",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nstatus\tenum('open','in_progress','waiting','resolved','closed')\tNO\t\topen\t\n",
+  "stderr": "",
+  "execution_time_ms": 68
+}

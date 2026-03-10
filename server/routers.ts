@@ -230,7 +230,7 @@ export const appRouter = router({
   dialogs: router({
     list: protectedProcedure
       .input(z.object({
-        status: z.enum(["open", "in_progress", "waiting", "resolved", "closed", "all"]).optional().default("all"),
+        status: z.enum(["open", "in_progress", "waiting", "needs_reply", "resolved", "closed", "archived", "all"]).optional().default("all"),
         assigneeId: z.number().optional(),
         search: z.string().optional(),
         tagId: z.number().optional(),
@@ -292,7 +292,7 @@ export const appRouter = router({
       }),
 
     updateStatus: protectedProcedure
-      .input(z.object({ id: z.number(), status: z.enum(["open", "in_progress", "waiting", "resolved", "closed"]) }))
+      .input(z.object({ id: z.number(), status: z.enum(["open", "in_progress", "waiting", "needs_reply", "resolved", "closed", "archived"]) }))
       .mutation(async ({ input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -303,7 +303,7 @@ export const appRouter = router({
     bulkUpdateStatus: protectedProcedure
       .input(z.object({
         ids: z.array(z.number()).min(1).max(500),
-        status: z.enum(["open", "in_progress", "waiting", "resolved", "closed"]),
+        status: z.enum(["open", "in_progress", "waiting", "needs_reply", "resolved", "closed", "archived"]),
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
@@ -480,7 +480,7 @@ export const appRouter = router({
     bulkUpdateStatus: protectedProcedure
       .input(z.object({
         ids: z.array(z.number()).min(1),
-        status: z.enum(["open", "in_progress", "waiting", "resolved", "closed"]),
+        status: z.enum(["open", "in_progress", "waiting", "needs_reply", "resolved", "closed", "archived"]),
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
