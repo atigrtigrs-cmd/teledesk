@@ -1,7 +1,7 @@
 /**
  * TeleDesk — Telegram MTProto Service
  * Uses GramJS to connect personal Telegram accounts via QR code,
- * listen for incoming messages, and sync with Bitrix24.
+ * listen for incoming/outgoing messages, and sync full history.
  */
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
@@ -9,7 +9,7 @@ import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { getDb } from "./db";
 import { telegramAccounts, dialogs, messages, contacts, Dialog } from "../drizzle/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { createBitrixDeal, addBitrixTimelineComment } from "./bitrix";
 import { invokeLLM } from "./_core/llm";
 import { emitInboxEvent } from "./sse";
@@ -72,10 +72,10 @@ export async function restoreAllSessions(): Promise<void> {
         console.log(`[Telegram] Restored session for account #${acc.id}`);
       } catch (err) {
         console.error(`[Telegram] Failed to restore account #${acc.id}:`, err);
-      await db
-        .update(telegramAccounts)
-        .set({ status: "disconnected" })
-        .where(eq(telegramAccounts.id, acc.id));
+        await db
+          .update(telegramAccounts)
+          .set({ status: "disconnected" })
+          .where(eq(telegramAccounts.id, acc.id));
       }
     }
   } catch (err) {
@@ -117,15 +117,17 @@ async function saveSessionAndListen(
   if (!db) return;
 
   // Get account info from Telegram
+  let myTelegramId: string | null = null;
   try {
     const me = await client.getMe();
     const meUser = me as any;
+    myTelegramId = String(meUser.id ?? "");
     await db
       .update(telegramAccounts)
       .set({
         sessionString,
         status: "active",
-        telegramId: String(meUser.id ?? ""),
+        telegramId: myTelegramId,
         username: meUser.username ?? null,
         firstName: meUser.firstName ?? null,
         lastName: meUser.lastName ?? null,
@@ -136,14 +138,206 @@ async function saveSessionAndListen(
     console.error("[Telegram] Failed to get account info:", err);
   }
 
-  // Register message handler
+  // Register incoming message handler
   client.addEventHandler(
     (event: NewMessageEvent) => handleIncomingMessage(accountId, event),
     new NewMessage({ incoming: true })
   );
 
+  // Register outgoing message handler (messages sent from Telegram app)
+  client.addEventHandler(
+    (event: NewMessageEvent) => handleOutgoingMessage(accountId, event),
+    new NewMessage({ outgoing: true })
+  );
+
   activeClients.set(accountId, client);
   console.log(`[Telegram] Account #${accountId} connected and listening`);
+
+  // Start history sync in background (don't await — let it run async)
+  syncAccountHistory(accountId, client).catch(err =>
+    console.error(`[Telegram] History sync failed for account #${accountId}:`, err)
+  );
+}
+
+// ─── Full History Sync ────────────────────────────────────────────────────────
+
+export async function syncAccountHistory(accountId: number, clientArg?: TelegramClient): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const client = clientArg ?? activeClients.get(accountId);
+  if (!client) {
+    console.error(`[Sync] No active client for account #${accountId}`);
+    return;
+  }
+
+  // Mark as syncing
+  await db.update(telegramAccounts)
+    .set({ syncStatus: "syncing" })
+    .where(eq(telegramAccounts.id, accountId));
+
+  console.log(`[Sync] Starting history sync for account #${accountId}`);
+
+  let syncedCount = 0;
+
+  try {
+    // Get account's own telegramId for direction detection
+    const [acc] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, accountId)).limit(1);
+    const myTelegramId = acc?.telegramId ?? null;
+
+    // Get all dialogs (personal chats only)
+    const tgDialogs = await client.getDialogs({ limit: 500 });
+
+    for (const tgDialog of tgDialogs) {
+      try {
+        const entity = tgDialog.entity as any;
+
+        // Only process private chats (not groups/channels/bots)
+        if (!entity || entity.className !== "User") continue;
+        if (entity.bot) continue; // skip bots
+
+        const contactTelegramId = String(entity.id);
+        const contactName = `${entity.firstName ?? ""} ${entity.lastName ?? ""}`.trim();
+
+        // Upsert contact
+        let contactId: number;
+        const existingContacts = await db.select().from(contacts)
+          .where(eq(contacts.telegramId, contactTelegramId)).limit(1);
+
+        if (existingContacts.length > 0) {
+          contactId = existingContacts[0].id;
+          // Update contact info
+          await db.update(contacts).set({
+            username: entity.username ?? existingContacts[0].username,
+            firstName: entity.firstName ?? existingContacts[0].firstName,
+            lastName: entity.lastName ?? existingContacts[0].lastName,
+            phone: entity.phone ?? existingContacts[0].phone,
+          }).where(eq(contacts.id, contactId));
+        } else {
+          const inserted = await db.insert(contacts).values({
+            telegramId: contactTelegramId,
+            username: entity.username ?? null,
+            firstName: entity.firstName ?? null,
+            lastName: entity.lastName ?? null,
+            phone: entity.phone ?? null,
+          });
+          contactId = Number((inserted as any)[0]?.insertId ?? 0);
+          if (!contactId) continue;
+        }
+
+        // Find or create dialog
+        let dialogId: number;
+        const existingDialogs = await db.select().from(dialogs)
+          .where(and(eq(dialogs.telegramAccountId, accountId), eq(dialogs.contactId, contactId)))
+          .orderBy(desc(dialogs.id)).limit(1);
+
+        if (existingDialogs.length > 0) {
+          dialogId = existingDialogs[0].id;
+        } else {
+          const inserted = await db.insert(dialogs).values({
+            telegramAccountId: accountId,
+            contactId,
+            status: "open",
+            lastMessageText: null,
+            lastMessageAt: null,
+            unreadCount: 0,
+          });
+          dialogId = Number((inserted as any)[0]?.insertId ?? 0);
+          if (!dialogId) continue;
+        }
+
+        // Fetch all messages for this dialog (paginated)
+        let offsetId = 0;
+        let hasMore = true;
+        let lastMsgText: string | null = null;
+        let lastMsgAt: Date | null = null;
+
+        while (hasMore) {
+          const batch = await client.getMessages(entity, {
+            limit: 100,
+            offsetId,
+          });
+
+          if (!batch || batch.length === 0) break;
+
+          for (const msg of batch) {
+            const msgAny = msg as any;
+            if (!msgAny.id) continue;
+
+            const tgMsgId = String(msgAny.id);
+            const text = msgAny.message ?? msgAny.caption ?? "";
+            const msgDate = new Date(Number(msgAny.date) * 1000);
+            const isOutgoing = msgAny.out === true;
+
+            // Skip non-text messages with no caption
+            if (!text && !msgAny.media) continue;
+
+            // Check for duplicate
+            const existing = await db.select({ id: messages.id }).from(messages)
+              .where(and(
+                eq(messages.dialogId, dialogId),
+                eq(messages.telegramMessageId, tgMsgId)
+              )).limit(1);
+
+            if (existing.length > 0) continue; // already saved
+
+            await db.insert(messages).values({
+              dialogId,
+              direction: isOutgoing ? "outgoing" : "incoming",
+              text: text || null,
+              telegramMessageId: tgMsgId,
+              createdAt: msgDate,
+            });
+
+            if (!lastMsgAt || msgDate > lastMsgAt) {
+              lastMsgAt = msgDate;
+              lastMsgText = text || null;
+            }
+          }
+
+          if (batch.length < 100) {
+            hasMore = false;
+          } else {
+            offsetId = (batch[batch.length - 1] as any).id;
+          }
+        }
+
+        // Update dialog's last message
+        if (lastMsgAt) {
+          await db.update(dialogs).set({
+            lastMessageText: lastMsgText?.substring(0, 255) ?? null,
+            lastMessageAt: lastMsgAt,
+          }).where(eq(dialogs.id, dialogId));
+        }
+
+        syncedCount++;
+        console.log(`[Sync] Synced dialog with ${contactName} (${contactTelegramId}), dialogId=#${dialogId}`);
+
+        // Small delay to avoid rate limiting
+        await new Promise(r => setTimeout(r, 100));
+
+      } catch (err) {
+        console.error(`[Sync] Error syncing dialog:`, err);
+      }
+    }
+
+    // Mark sync as done
+    await db.update(telegramAccounts).set({
+      syncStatus: "done",
+      lastSyncAt: new Date(),
+      syncedDialogs: syncedCount,
+    }).where(eq(telegramAccounts.id, accountId));
+
+    console.log(`[Sync] Completed for account #${accountId}: ${syncedCount} dialogs synced`);
+
+    // Notify frontend
+    emitInboxEvent({ type: "sync_complete", accountId, syncedCount } as any);
+
+  } catch (err) {
+    console.error(`[Sync] Fatal error for account #${accountId}:`, err);
+    await db.update(telegramAccounts).set({ syncStatus: "error" })
+      .where(eq(telegramAccounts.id, accountId));
+  }
 }
 
 // ─── Handle incoming message ─────────────────────────────────────────────────
@@ -185,12 +379,10 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
         lastName: sender?.lastName ?? null,
         phone: sender?.phone ?? null,
       });
-      // Drizzle mysql2 returns [ResultSetHeader, null] — access index 0
       contactId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId ?? 0);
     }
 
     // ── 2. Find existing dialog (any status) or create one ───────────────
-    // One dialog per contact — never create duplicates, just reopen if closed
     const existingDialogs = await db
       .select()
       .from(dialogs)
@@ -208,7 +400,6 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
 
     if (existingDialogs.length > 0) {
       dialogId = existingDialogs[0].id;
-      // Reopen if closed/resolved, update last message and unread count
       await db
         .update(dialogs)
         .set({
@@ -218,9 +409,7 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
           unreadCount: existingDialogs[0].unreadCount + 1,
         })
         .where(eq(dialogs.id, dialogId));
-      console.log(`[Telegram] Reusing dialog #${dialogId} for account #${accountId}, contact #${contactId}`);
     } else {
-      // Truly new contact — create dialog for the first time
       const inserted = await db.insert(dialogs).values({
         telegramAccountId: accountId,
         contactId: contactId!,
@@ -229,21 +418,23 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
         lastMessageAt: new Date(),
         unreadCount: 1,
       });
-      // Drizzle mysql2 returns [ResultSetHeader, null] — access index 0
       dialogId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId ?? 0);
-      console.log(`[Telegram] Created new dialog #${dialogId} for account #${accountId}, contact #${contactId}`);
 
-      // Create Bitrix24 deal only for brand-new contacts
       await createBitrixDealForDialog(dialogId, contactId!, sender, text, accountId).catch(err =>
         console.error("[Bitrix] Failed to create deal:", err)
       );
     }
 
-    // ── 3. Save message ────────────────────────────────────────────────────
     if (!dialogId) {
-      console.error(`[Telegram] dialogId is 0 or null, cannot save message. accountId=${accountId}, contactId=${contactId}`);
+      console.error(`[Telegram] dialogId is 0 or null, cannot save message.`);
       return;
     }
+
+    // Check for duplicate (may have been synced already)
+    const existingMsg = await db.select({ id: messages.id }).from(messages)
+      .where(and(eq(messages.dialogId, dialogId), eq(messages.telegramMessageId, tgMsgId))).limit(1);
+    if (existingMsg.length > 0) return;
+
     await db.insert(messages).values({
       dialogId,
       direction: "incoming",
@@ -251,17 +442,78 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
       telegramMessageId: tgMsgId,
       createdAt: new Date(Number(msg.date) * 1000),
     });
-    console.log(`[Telegram] Saved message to dialog #${dialogId}`);
-    // ── 4. Push real-time SSE event to all connected browser clients ────────
+
     emitInboxEvent(
       isNewDialog
         ? { type: "new_dialog", dialogId, accountId }
         : { type: "new_message", dialogId, accountId }
     );
 
-    console.log(`[Telegram] New message in dialog #${dialogId}: "${text.substring(0, 50)}"`);
+    console.log(`[Telegram] Incoming message in dialog #${dialogId}: "${text.substring(0, 50)}"`);
   } catch (err) {
-    console.error("[Telegram] Error handling message:", err);
+    console.error("[Telegram] Error handling incoming message:", err);
+  }
+}
+
+// ─── Handle outgoing message (sent from Telegram app) ────────────────────────
+
+async function handleOutgoingMessage(accountId: number, event: NewMessageEvent): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    const msg = event.message;
+    if (!msg || !msg.peerId) return;
+
+    // Only private chats
+    const peerId = msg.peerId as any;
+    if (!peerId.userId) return;
+
+    const recipientId = String(peerId.userId);
+    const text = msg.message ?? "";
+    const tgMsgId = String(msg.id);
+
+    // Find contact
+    const existingContacts = await db.select().from(contacts)
+      .where(eq(contacts.telegramId, recipientId)).limit(1);
+
+    if (existingContacts.length === 0) return; // unknown contact, skip
+
+    const contactId = existingContacts[0].id;
+
+    // Find dialog
+    const existingDialogs = await db.select().from(dialogs)
+      .where(and(eq(dialogs.telegramAccountId, accountId), eq(dialogs.contactId, contactId)))
+      .orderBy(desc(dialogs.id)).limit(1);
+
+    if (existingDialogs.length === 0) return;
+
+    const dialogId = existingDialogs[0].id;
+
+    // Check for duplicate
+    const existingMsg = await db.select({ id: messages.id }).from(messages)
+      .where(and(eq(messages.dialogId, dialogId), eq(messages.telegramMessageId, tgMsgId))).limit(1);
+    if (existingMsg.length > 0) return;
+
+    await db.insert(messages).values({
+      dialogId,
+      direction: "outgoing",
+      text: text || null,
+      telegramMessageId: tgMsgId,
+      createdAt: new Date(Number(msg.date) * 1000),
+    });
+
+    // Update last message
+    await db.update(dialogs).set({
+      lastMessageText: text.substring(0, 255),
+      lastMessageAt: new Date(Number(msg.date) * 1000),
+    }).where(eq(dialogs.id, dialogId));
+
+    emitInboxEvent({ type: "new_message", dialogId, accountId });
+
+    console.log(`[Telegram] Outgoing (from app) in dialog #${dialogId}: "${text.substring(0, 50)}"`);
+  } catch (err) {
+    console.error("[Telegram] Error handling outgoing message:", err);
   }
 }
 
@@ -290,7 +542,6 @@ async function createBitrixDealForDialog(
   const db = await getDb();
   if (!db) return;
 
-  // Load per-account Bitrix24 pipeline settings if accountId is provided
   let pipelineId: string | null = null;
   let stageId: string | null = null;
   let responsibleId: string | null = null;
@@ -305,9 +556,6 @@ async function createBitrixDealForDialog(
       pipelineId = acct[0].bitrixPipelineId ?? null;
       stageId = acct[0].bitrixStageId ?? null;
       responsibleId = acct[0].bitrixResponsibleId ?? null;
-    }
-    if (pipelineId || stageId || responsibleId) {
-      console.log(`[Bitrix] Using per-account pipeline for account #${accountId}: pipeline=${pipelineId}, stage=${stageId}, responsible=${responsibleId}`);
     }
   }
 
@@ -397,25 +645,13 @@ export async function analyzeDialog(dialogId: number): Promise<{
 }
 
 // ─── Phone Login Flow ────────────────────────────────────────────────────────
-//
-// Uses GramJS high-level client.start() which automatically handles:
-//   • PHONE_MIGRATE — switches to the correct DC transparently
-//   • FloodWait — surfaces the wait time in the error message
-//   • PHONE_NUMBER_INVALID — clear error
-//   • SESSION_PASSWORD_NEEDED — triggers 2FA step
-//
-// The flow is callback-driven: start() calls our callbacks when it needs
-// the phone code or 2FA password. We use a Promise pair to bridge the
-// async callback into the request/response tRPC model.
 
 type PendingPhoneSession = {
   client: TelegramClient;
-  // Resolvers that start() is waiting on
   resolveCode: (code: string) => void;
   rejectCode: (err: Error) => void;
   resolveTwoFA: (pw: string) => void;
   rejectTwoFA: (err: Error) => void;
-  // Whether start() has completed (success or error)
   done: Promise<void>;
 };
 
@@ -425,7 +661,6 @@ export async function startPhoneLogin(
   accountId: number,
   phone: string
 ): Promise<{ ok: true }> {
-  // Clean up any existing pending session
   const existing = pendingPhoneClients.get(accountId);
   if (existing) {
     existing.rejectCode(new Error("New login attempt started"));
@@ -438,7 +673,6 @@ export async function startPhoneLogin(
   const client = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
     connectionRetries: 5,
     useWSS: true,
-    // Let GramJS handle DC migration automatically
     deviceModel: "LeadCash Connect",
     appVersion: "1.0",
     langCode: "ru",
@@ -454,22 +688,15 @@ export async function startPhoneLogin(
 
   const done = client.start({
     phoneNumber: async () => phone,
-    phoneCode: async () => {
-      // Wait until verifyPhoneCode() provides the code
-      return codePromise;
-    },
-    password: async () => {
-      // Wait until verifyTwoFAPassword() provides the password
-      return twoFAPromise;
-    },
+    phoneCode: async () => codePromise,
+    password: async () => twoFAPromise,
     onError: async (err: Error) => {
       console.error("[Telegram] Phone login error:", err.message);
       rejectCode(err);
       rejectTwoFA(err);
-      return true; // tell GramJS we handled it
+      return true;
     },
   }).then(async () => {
-    // Login successful — save session
     const sessionStr = client.session.save() as unknown as string;
     await saveSessionAndListen(accountId, client, sessionStr);
     pendingPhoneClients.delete(accountId);
@@ -489,10 +716,7 @@ export async function startPhoneLogin(
     done,
   });
 
-  // Give GramJS a moment to connect and send the code before returning
-  // (start() is async and fires the phoneCode callback after sendCode succeeds)
   await new Promise<void>((res) => setTimeout(res, 2000));
-
   return { ok: true };
 }
 
@@ -504,19 +728,12 @@ export async function verifyPhoneCode(
   const pending = pendingPhoneClients.get(accountId);
   if (!pending) throw new Error("Нет активной сессии. Запросите код ещё раз.");
 
-  // Provide the code to the waiting start() callback
   pending.resolveCode(code);
-
-  // Wait briefly to see if start() completes (success) or asks for 2FA
   await new Promise<void>((res) => setTimeout(res, 1500));
 
-  // If the session is gone, login completed successfully
   if (!pendingPhoneClients.has(accountId)) {
     return { success: true, requiresPassword: false };
   }
-
-  // Session still present — either 2FA needed or error
-  // We can't distinguish here without more state, so assume 2FA
   return { success: false, requiresPassword: true };
 }
 
@@ -527,10 +744,7 @@ export async function verifyTwoFAPassword(
   const pending = pendingPhoneClients.get(accountId);
   if (!pending) throw new Error("Нет активной сессии.");
 
-  // Provide the 2FA password to the waiting start() callback
   pending.resolveTwoFA(password);
-
-  // Wait for start() to complete
   await pending.done;
 
   if (pendingPhoneClients.has(accountId)) {
@@ -538,7 +752,7 @@ export async function verifyTwoFAPassword(
   }
 }
 
-// ─── Get QR token for active session check ────────────────────────────────────
+// ─── Get active account IDs ───────────────────────────────────────────────────
 
 export function getActiveAccountIds(): number[] {
   return Array.from(activeClients.keys());

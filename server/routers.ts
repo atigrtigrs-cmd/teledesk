@@ -19,7 +19,7 @@ import { eq, desc, and, sql, gte, count, countDistinct } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
-import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, connectAccount } from "./telegram";
+import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, connectAccount, syncAccountHistory } from "./telegram";
 import { ENV } from "./_core/env";
 
 const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
@@ -186,6 +186,16 @@ export const appRouter = router({
         } catch (err: any) {
           throw new TRPCError({ code: "BAD_REQUEST", message: err?.message ?? "Invalid 2FA password" });
         }
+      }),
+
+    syncHistory: protectedProcedure
+      .input(z.object({ accountId: z.number() }))
+      .mutation(async ({ input }) => {
+        // Run sync in background, return immediately
+        syncAccountHistory(input.accountId).catch(err =>
+          console.error(`[Sync] Manual sync failed for account #${input.accountId}:`, err)
+        );
+        return { success: true, message: "Синхронизация запущена" };
       }),
 
     connectSessionString: protectedProcedure

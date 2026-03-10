@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO users (openId, email, name, role, passwordHash, loginMethod) VALUES ('anna.kuzmina@lead-cash.com', 'anna.kuzmina@lead-cash.com', 'Anna Kuzmina', 'admin', '$2b$12$4DM9W/DQx/Sgqkq5.OTncucGQx5rBlXqC.00I4nWEFb3hBu8BZ8.6', 'email');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute INSERT INTO users (openId, email, name, role, passwordHash, loginMethod) VALUES ('anna.kuzmina@lead-cash.com', 'anna.kuzmina@lead-cash.com', 'Anna Kuzmina', 'admin', '$2b$12$4DM9W/DQx/Sgqkq5.OTncucGQx5rBlXqC.00I4nWEFb3hBu8BZ8.6', 'email');",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 70
+}

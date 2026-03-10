@@ -31,6 +31,8 @@ import {
   Settings2,
   Phone,
   Terminal,
+  History,
+  CloudDownload,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -175,6 +177,11 @@ export default function Accounts() {
       refetch();
     },
     onError: (err) => toast.error("Ошибка: " + err.message),
+  });
+
+  const syncHistoryMutation = trpc.accounts.syncHistory.useMutation({
+    onSuccess: () => toast.success("Синхронизация истории запущена. Это может занять 1-5 минут."),
+    onError: (e) => toast.error(e.message),
   });
 
   const verifyTwoFAMutation = trpc.accounts.verifyTwoFA.useMutation({
@@ -410,6 +417,15 @@ export default function Accounts() {
                             <Settings2 className="mr-2 h-4 w-4" />
                             Настройки Битрикс24
                           </DropdownMenuItem>
+                          {acc.status === "active" && (
+                            <DropdownMenuItem
+                              onClick={() => syncHistoryMutation.mutate({ accountId: acc.id })}
+                              disabled={syncHistoryMutation.isPending || (acc as any).syncStatus === "syncing"}
+                            >
+                              <History className="mr-2 h-4 w-4" />
+                              Синхронизировать историю
+                            </DropdownMenuItem>
+                          )}
                           {acc.status === "disconnected" && (
                             <DropdownMenuItem onClick={() => updateStatusMutation.mutate({ id: acc.id, status: "active" })}>
                               <RefreshCw className="mr-2 h-4 w-4" />
@@ -468,6 +484,44 @@ export default function Accounts() {
                     )}
                     <Settings2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   </button>
+
+                  {/* Sync Status */}
+                  {acc.status === "active" && (
+                    <div className={`flex items-center gap-2 mb-3 px-3 py-2 rounded-lg text-xs ${
+                      (acc as any).syncStatus === "syncing"
+                        ? "bg-blue-500/10 border border-blue-500/20 text-blue-400"
+                        : (acc as any).syncStatus === "done"
+                        ? "bg-green-500/10 border border-green-500/20 text-green-400"
+                        : (acc as any).syncStatus === "error"
+                        ? "bg-red-500/10 border border-red-500/20 text-red-400"
+                        : "bg-muted/30 border border-border/40 text-muted-foreground"
+                    }`}>
+                      {(acc as any).syncStatus === "syncing" ? (
+                        <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                      ) : (acc as any).syncStatus === "done" ? (
+                        <CheckCircle2 className="h-3 w-3 shrink-0" />
+                      ) : (
+                        <CloudDownload className="h-3 w-3 shrink-0" />
+                      )}
+                      <span>
+                        {(acc as any).syncStatus === "syncing"
+                          ? "Синхронизация истории..."
+                          : (acc as any).syncStatus === "done"
+                          ? `История синхронизирована · ${(acc as any).syncedDialogs ?? 0} диалогов`
+                          : (acc as any).syncStatus === "error"
+                          ? "Ошибка синхронизации"
+                          : "История не синхронизирована"}
+                      </span>
+                      {(acc as any).syncStatus !== "syncing" && acc.status === "active" && (
+                        <button
+                          onClick={() => syncHistoryMutation.mutate({ accountId: acc.id })}
+                          className="ml-auto text-[10px] underline underline-offset-2 opacity-70 hover:opacity-100"
+                        >
+                          {(acc as any).syncStatus === "done" ? "Обновить" : "Синхронизировать"}
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* Footer */}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

@@ -102,6 +102,15 @@
 - [ ] First response time tracking (store firstResponseAt on dialog)
 - [ ] Inbox UX: show assignee avatar on dialog card
 
+## History Sync (MTProto)
+- [x] Add syncAccountHistory() function to telegram.ts (getDialogs + getMessages)
+- [x] Save outgoing messages from history with direction=outgoing
+- [x] Deduplicate by telegramMessageId
+- [x] Add real-time outgoing message handler (NewMessage outgoing:true)
+- [x] Add syncStatus field to telegramAccounts schema
+- [x] Add manual re-sync tRPC procedure
+- [x] Add sync status + re-sync button to Accounts page UI
+
 ## Inbox Telegram Account Filter
 - [x] Add telegramAccountId filter to dialogs.list backend procedure
 - [x] Add Telegram account filter dropdown to Inbox UI

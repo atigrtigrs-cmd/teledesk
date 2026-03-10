@@ -45,6 +45,9 @@ export const telegramAccounts = mysqlTable("telegram_accounts", {
   bitrixStageId: varchar("bitrixStageId", { length: 64 }),
   bitrixResponsibleId: varchar("bitrixResponsibleId", { length: 64 }),
   bitrixResponsibleName: varchar("bitrixResponsibleName", { length: 255 }),
+  syncStatus: mysqlEnum("syncStatus", ["idle", "syncing", "done", "error"]).default("idle"),
+  lastSyncAt: timestamp("lastSyncAt"),
+  syncedDialogs: int("syncedDialogs").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
