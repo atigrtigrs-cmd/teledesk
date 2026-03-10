@@ -31,6 +31,7 @@ export type InsertUser = typeof users.$inferInsert;
 export const telegramAccounts = mysqlTable("telegram_accounts", {
   id: int("id").autoincrement().primaryKey(),
   ownerId: int("ownerId").references(() => users.id),
+  managerId: int("managerId").references(() => users.id),
   phone: varchar("phone", { length: 32 }),
   username: varchar("username", { length: 128 }),
   firstName: varchar("firstName", { length: 255 }),

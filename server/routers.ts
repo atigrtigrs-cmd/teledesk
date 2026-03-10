@@ -14,6 +14,7 @@ import {
   workingHours,
   tags,
   dialogTags,
+  users,
 } from "../drizzle/schema";
 import { eq, desc, and, sql, gte, count, countDistinct, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -196,6 +197,18 @@ export const appRouter = router({
           console.error(`[Sync] Manual sync failed for account #${input.accountId}:`, err)
         );
         return { success: true, message: "Синхронизация запущена" };
+      }),
+
+    assignManager: protectedProcedure
+      .input(z.object({ id: z.number(), managerId: z.number().nullable() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(telegramAccounts)
+          .set({ managerId: input.managerId })
+          .where(eq(telegramAccounts.id, input.id));
+        const [acc] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, input.id)).limit(1);
+        return acc;
       }),
 
     connectSessionString: protectedProcedure
@@ -710,48 +723,76 @@ export const appRouter = router({
           since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         }
 
+        const allUsers = await db.select().from(users);
         const accounts = await db.select().from(telegramAccounts);
 
-        const stats = await Promise.all(accounts.map(async (acc) => {
+        // Group accounts by managerId
+        const managerMap = new Map<number | null, typeof accounts>();
+        for (const acc of accounts) {
+          const key = acc.managerId ?? null;
+          if (!managerMap.has(key)) managerMap.set(key, []);
+          managerMap.get(key)!.push(acc);
+        }
+
+        const stats = await Promise.all(Array.from(managerMap.entries()).map(async ([managerId, managerAccounts]) => {
+          const accountIds = managerAccounts.map(a => a.id);
+          const manager = managerId ? allUsers.find(u => u.id === managerId) : null;
+          const name = manager
+            ? (manager.name ?? manager.email ?? `Менеджер #${managerId}`)
+            : (managerAccounts.length === 1
+              ? (managerAccounts[0].firstName ? `${managerAccounts[0].firstName}${managerAccounts[0].lastName ? " " + managerAccounts[0].lastName : ""}` : (managerAccounts[0].phone ?? `Аккаунт #${managerAccounts[0].id}`))
+              : `Без менеджера`);
+
+          const inIds = sql`IN (${sql.join(accountIds.map(id => sql`${id}`), sql`, `)})`;
+
           const dialogFilter = since
-            ? and(eq(dialogs.telegramAccountId, acc.id), gte(dialogs.createdAt, since))
-            : eq(dialogs.telegramAccountId, acc.id);
+            ? sql`telegramAccountId ${inIds} AND createdAt >= ${since}`
+            : sql`telegramAccountId ${inIds}`;
 
-          const [dialogCount] = await db.select({ count: count() }).from(dialogs).where(dialogFilter);
+          const [dialogCount] = await db.execute(
+            since
+              ? sql`SELECT COUNT(*) as cnt FROM dialogs WHERE telegramAccountId IN (${sql.join(accountIds.map(id => sql`${id}`), sql`, `)}) AND createdAt >= ${since}`
+              : sql`SELECT COUNT(*) as cnt FROM dialogs WHERE telegramAccountId IN (${sql.join(accountIds.map(id => sql`${id}`), sql`, `)})`
+          ) as any;
 
-          const [dealsCount] = await db.select({ count: count() }).from(dialogs)
-            .where(since
-              ? and(eq(dialogs.telegramAccountId, acc.id), sql`${dialogs.bitrixDealId} IS NOT NULL`, gte(dialogs.createdAt, since))
-              : and(eq(dialogs.telegramAccountId, acc.id), sql`${dialogs.bitrixDealId} IS NOT NULL`));
+          const [dealsCount] = await db.execute(
+            since
+              ? sql`SELECT COUNT(*) as cnt FROM dialogs WHERE telegramAccountId IN (${sql.join(accountIds.map(id => sql`${id}`), sql`, `)}) AND bitrixDealId IS NOT NULL AND createdAt >= ${since}`
+              : sql`SELECT COUNT(*) as cnt FROM dialogs WHERE telegramAccountId IN (${sql.join(accountIds.map(id => sql`${id}`), sql`, `)}) AND bitrixDealId IS NOT NULL`
+          ) as any;
 
-          const [msgCount] = await db.select({ count: count() }).from(messages)
-            .innerJoin(dialogs, eq(messages.dialogId, dialogs.id))
-            .where(since
-              ? and(eq(dialogs.telegramAccountId, acc.id), gte(messages.createdAt, since))
-              : eq(dialogs.telegramAccountId, acc.id));
+          const [msgCount] = await db.execute(
+            since
+              ? sql`SELECT COUNT(*) as cnt FROM messages m INNER JOIN dialogs d ON m.dialogId = d.id WHERE d.telegramAccountId IN (${sql.join(accountIds.map(id => sql`${id}`), sql`, `)}) AND m.createdAt >= ${since}`
+              : sql`SELECT COUNT(*) as cnt FROM messages m INNER JOIN dialogs d ON m.dialogId = d.id WHERE d.telegramAccountId IN (${sql.join(accountIds.map(id => sql`${id}`), sql`, `)})`
+          ) as any;
 
-          const [unreadCount] = await db
-            .select({ total: sql<number>`COALESCE(SUM(${dialogs.unreadCount}), 0)` })
-            .from(dialogs).where(eq(dialogs.telegramAccountId, acc.id));
+          const [unreadCount] = await db.execute(
+            sql`SELECT COALESCE(SUM(unreadCount), 0) as total FROM dialogs WHERE telegramAccountId IN (${sql.join(accountIds.map(id => sql`${id}`), sql`, `)})`
+          ) as any;
 
-          const [openCount] = await db.select({ count: count() }).from(dialogs)
-            .where(and(eq(dialogs.telegramAccountId, acc.id), eq(dialogs.status, "open")));
+          const [openCount] = await db.execute(
+            sql`SELECT COUNT(*) as cnt FROM dialogs WHERE telegramAccountId IN (${sql.join(accountIds.map(id => sql`${id}`), sql`, `)}) AND status = 'open'`
+          ) as any;
+
+          const dlg = Number((dialogCount as any[])[0]?.cnt ?? 0);
+          const deals = Number((dealsCount as any[])[0]?.cnt ?? 0);
 
           return {
-            accountId: acc.id,
-            name: acc.firstName ? `${acc.firstName}${acc.lastName ? " " + acc.lastName : ""}` : (acc.phone ?? `Аккаунт #${acc.id}`),
-            phone: acc.phone ?? "",
-            username: acc.username ?? "",
-            status: acc.status,
-            bitrixResponsibleName: acc.bitrixResponsibleName ?? "",
-            dialogs: dialogCount?.count ?? 0,
-            deals: dealsCount?.count ?? 0,
-            messages: msgCount?.count ?? 0,
-            unread: Number(unreadCount?.total ?? 0),
-            openDialogs: openCount?.count ?? 0,
-            conversionRate: dialogCount?.count > 0
-              ? Math.round((dealsCount?.count / dialogCount?.count) * 100)
-              : 0,
+            accountId: managerId ?? managerAccounts[0].id,
+            managerId,
+            name,
+            phone: managerAccounts.map(a => a.phone).filter(Boolean).join(", "),
+            username: managerAccounts.map(a => a.username ? `@${a.username}` : "").filter(Boolean).join(", "),
+            status: managerAccounts.some(a => a.status === "active") ? "active" : managerAccounts[0].status,
+            bitrixResponsibleName: managerAccounts[0].bitrixResponsibleName ?? "",
+            accountCount: managerAccounts.length,
+            dialogs: dlg,
+            deals,
+            messages: Number((msgCount as any[])[0]?.cnt ?? 0),
+            unread: Number((unreadCount as any[])[0]?.total ?? 0),
+            openDialogs: Number((openCount as any[])[0]?.cnt ?? 0),
+            conversionRate: dlg > 0 ? Math.round((deals / dlg) * 100) : 0,
           };
         }));
 
@@ -913,12 +954,14 @@ export const appRouter = router({
         else if (input.period === "week") fromTs = now - 7 * 24 * 60 * 60 * 1000;
         else if (input.period === "month") fromTs = now - 30 * 24 * 60 * 60 * 1000;
 
+        const allUsers = await db.select().from(users);
         const accounts = await db.select({
           id: telegramAccounts.id,
           username: telegramAccounts.username,
           firstName: telegramAccounts.firstName,
           lastName: telegramAccounts.lastName,
           status: telegramAccounts.status,
+          managerId: telegramAccounts.managerId,
         }).from(telegramAccounts);
 
         const stats = await Promise.all(accounts.map(async (acc) => {
@@ -951,12 +994,15 @@ export const appRouter = router({
               : sql`SELECT AVG(diff) as avg_ms FROM (SELECT MIN(m2.createdAt) - m1.createdAt as diff FROM messages m1 JOIN messages m2 ON m2.dialogId = m1.dialogId AND m2.direction = 'outgoing' AND m2.createdAt > m1.createdAt WHERE m1.direction = 'incoming' AND m1.dialogId IN (SELECT id FROM dialogs WHERE telegramAccountId = ${acc.id}) GROUP BY m1.id) t WHERE diff > 0 AND diff < 86400000`
           ) as any;
 
+          const manager = acc.managerId ? allUsers.find(u => u.id === acc.managerId) : null;
           return {
             accountId: acc.id,
             username: acc.username,
             firstName: acc.firstName,
             lastName: acc.lastName,
             status: acc.status,
+            managerId: acc.managerId ?? null,
+            managerName: manager ? (manager.name ?? manager.email ?? null) : null,
             sent: Number((sentRow as any[])[0]?.cnt ?? 0),
             received: Number((recvRow as any[])[0]?.cnt ?? 0),
             activeDialogs: Number((activeRow as any[])[0]?.cnt ?? 0),

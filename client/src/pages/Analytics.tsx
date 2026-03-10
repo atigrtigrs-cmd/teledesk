@@ -642,6 +642,7 @@ export default function Analytics() {
                 <thead>
                   <tr className="border-b border-border/50 text-muted-foreground text-xs">
                     <th className="text-left px-4 py-3 font-medium">Аккаунт</th>
+                    <th className="text-left px-4 py-3 font-medium">Менеджер</th>
                     <th className="text-right px-4 py-3 font-medium">Отправлено</th>
                     <th className="text-right px-4 py-3 font-medium">Получено</th>
                     <th className="text-right px-4 py-3 font-medium">Активных диалогов</th>
@@ -668,6 +669,18 @@ export default function Analytics() {
                           <div className="font-medium">{name}</div>
                           {acc.username && (acc.firstName || acc.lastName) && (
                             <div className="text-xs text-muted-foreground">{[acc.firstName, acc.lastName].filter(Boolean).join(" ")}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {(acc as any).managerName ? (
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-primary text-[10px] font-bold shrink-0">
+                                {String((acc as any).managerName).charAt(0).toUpperCase()}
+                              </div>
+                              <span className="text-xs font-medium truncate max-w-[100px]">{(acc as any).managerName}</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/50 italic">—</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right font-semibold text-blue-400">{acc.sent.toLocaleString("ru")}</td>

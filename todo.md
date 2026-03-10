@@ -162,3 +162,21 @@
 - [x] Build Analytics page with period filter (today/week/month/all)
 - [x] Per-account stats table with all metrics
 - [x] Add Analytics link to sidebar navigation (already existed)
+
+## Analytics Enhancements
+- [ ] Backend: messageActivityByDay procedure (sent/received per day per account)
+- [ ] Backend: statusDistribution procedure (count by dialog status)
+- [ ] Backend: topContacts procedure (most active contacts by message count)
+- [ ] UI: Replace "dialogs per day" chart with "messages per day" (sent vs received stacked bars)
+- [ ] UI: Dialog status distribution donut chart
+- [ ] UI: Top active partners table (contact name, account, messages, last message date)
+- [ ] UI: Fix account stats table to use period filter from top selector
+
+## Telegram Account = Affiliate Manager
+- [x] Add managerId column (FK to users) to telegramAccounts schema
+- [x] Run DB migration (pnpm db:push)
+- [x] Add accounts.assignManager tRPC procedure
+- [x] Add manager selector dropdown in Accounts page (per account card)
+- [x] Analytics: show manager name from account.managerId (not assigneeId on dialog)
+- [x] Analytics: managerStats procedure uses account.managerId for grouping
+- [ ] Inbox: show manager name on dialog card based on account (pending)

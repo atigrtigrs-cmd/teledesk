@@ -108,6 +108,12 @@ export default function Accounts() {
   const [selectedResponsibleName, setSelectedResponsibleName] = useState<string>("");
 
   const { data: accounts, refetch } = trpc.accounts.list.useQuery();
+  const { data: allUsers = [] } = trpc.users.list.useQuery();
+
+  const assignManagerMutation = trpc.accounts.assignManager.useMutation({
+    onSuccess: () => { refetch(); toast.success("Менеджер назначен"); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const { data: pipelines = [] } = trpc.bitrix.getPipelines.useQuery(undefined, { enabled: showBitrixModal });
   const { data: stages = [] } = trpc.bitrix.getPipelineStages.useQuery(
@@ -522,6 +528,32 @@ export default function Accounts() {
                       )}
                     </div>
                   )}
+
+                  {/* Manager assignment */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      Менеджер:
+                    </div>
+                    <Select
+                      value={acc.managerId ? String(acc.managerId) : "none"}
+                      onValueChange={(v) => assignManagerMutation.mutate({ id: acc.id, managerId: v === "none" ? null : Number(v) })}
+                    >
+                      <SelectTrigger className={`h-7 text-xs flex-1 min-w-0 ${
+                        acc.managerId ? "border-primary/40 bg-primary/5 text-foreground" : "border-dashed border-border/60 text-muted-foreground"
+                      }`}>
+                        <SelectValue placeholder="Не назначен" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Не назначен</SelectItem>
+                        {allUsers.map((u: any) => (
+                          <SelectItem key={u.id} value={String(u.id)}>
+                            {u.name ?? u.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
                   {/* Footer */}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
