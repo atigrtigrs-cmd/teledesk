@@ -130,3 +130,7 @@
 - [x] Add checkbox on each dialog card in Inbox
 - [x] Add select-all checkbox in Inbox header
 - [x] Add floating bulk action toolbar (change status, assign manager)
+
+## UX: Exact Date in Dialog Cards
+- [x] Show exact date (dd.mm HH:MM or dd.mm.yyyy HH:MM) on dialog cards instead of relative time
+- [x] Show full datetime on hover (tooltip)

@@ -71,15 +71,31 @@ const filters: { label: string; value: StatusFilter }[] = [
   { label: "Решённые", value: "resolved" },
 ];
 
-function timeAgo(date: Date | null | undefined): string {
-  if (!date) return "—";
+function formatDate(date: Date | null | undefined): { short: string; full: string } {
+  if (!date) return { short: "—", full: "—" };
   const d = new Date(date);
   const now = new Date();
   const diff = Math.floor((now.getTime() - d.getTime()) / 1000);
-  if (diff < 60) return "только что";
-  if (diff < 3600) return `${Math.floor(diff / 60)} мин`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} ч`;
-  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  const full = d.toLocaleString("ru-RU", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+  let short: string;
+  if (diff < 60) {
+    short = "только что";
+  } else if (diff < 3600) {
+    short = `${Math.floor(diff / 60)} мин`;
+  } else if (diff < 86400) {
+    // today — show time
+    short = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  } else if (diff < 86400 * 365) {
+    // this year — show day.month time
+    short = d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  } else {
+    // older — show full date
+    short = d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+  return { short, full };
 }
 
 const AVATAR_COLORS = [
@@ -407,8 +423,11 @@ export default function Inbox() {
                               {dialog.unreadCount}
                             </span>
                           )}
-                          <span className="text-xs text-muted-foreground">
-                            {timeAgo(dialog.lastMessageAt)}
+                          <span
+                            className="text-xs text-muted-foreground cursor-default"
+                            title={formatDate(dialog.lastMessageAt).full}
+                          >
+                            {formatDate(dialog.lastMessageAt).short}
                           </span>
                         </div>
                       </div>
