@@ -1,0 +1,18 @@
+{
+  "query": "SELECT direction, COUNT(*) as cnt FROM messages GROUP BY direction;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT direction, COUNT(*) as cnt FROM messages GROUP BY direction;",
+  "rows": [
+    {
+      "direction": "outgoing",
+      "cnt": "17744"
+    },
+    {
+      "direction": "incoming",
+      "cnt": "37306"
+    }
+  ],
+  "messages": [],
+  "stdout": "direction\tcnt\noutgoing\t17744\nincoming\t37306\n",
+  "stderr": "",
+  "execution_time_ms": 129
+}

@@ -134,3 +134,8 @@
 ## UX: Exact Date in Dialog Cards
 - [x] Show exact date (dd.mm HH:MM or dd.mm.yyyy HH:MM) on dialog cards instead of relative time
 - [x] Show full datetime on hover (tooltip)
+
+## Sender Names in Chat
+- [x] Add senderName column to messages table
+- [x] Show sender name above each message bubble in DialogDetail
+- [x] Re-import exports with senderName from JSON

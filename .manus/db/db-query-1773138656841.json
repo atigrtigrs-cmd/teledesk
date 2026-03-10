@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, username, firstName, lastName, phone, status FROM telegram_accounts WHERE username LIKE '%LeadCash_Affiliate%' OR phone LIKE '%9231776601%' OR telegramId = '5547473306';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, username, firstName, lastName, phone, status FROM telegram_accounts WHERE username LIKE '%LeadCash_Affiliate%' OR phone LIKE '%9231776601%' OR telegramId = '5547473306';",
+  "rows": [
+    {
+      "id": "150002",
+      "username": "LeadCash_Affiliate",
+      "firstName": "Ulyana",
+      "lastName": "LeadCash",
+      "phone": "79231776601",
+      "status": "disconnected"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tfirstName\tlastName\tphone\tstatus\n150002\tLeadCash_Affiliate\tUlyana\tLeadCash\t79231776601\tdisconnected\n",
+  "stderr": "",
+  "execution_time_ms": 135
+}

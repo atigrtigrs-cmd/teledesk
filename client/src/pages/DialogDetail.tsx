@@ -330,8 +330,15 @@ export default function DialogDetail() {
                   );
                 }
 
+                const senderLabel = isOutgoing
+                  ? null
+                  : (msg as any).senderName || contactName;
+
                 return (
-                  <div key={msg.id} className={`flex ${isOutgoing ? "justify-end" : "justify-start"}`}>
+                  <div key={msg.id} className={`flex flex-col ${isOutgoing ? "items-end" : "items-start"}`}>
+                    {!isOutgoing && senderLabel && (
+                      <span className="text-xs text-muted-foreground font-medium mb-0.5 px-1">{senderLabel}</span>
+                    )}
                     <div className={`max-w-[72%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                       isOutgoing
                         ? "bg-primary text-primary-foreground rounded-br-sm shadow shadow-primary/20"

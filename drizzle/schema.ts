@@ -116,6 +116,7 @@ export const messages = mysqlTable("messages", {
   text: text("text"),
   mediaUrl: text("mediaUrl"),
   mediaType: mysqlEnum("mediaType", ["photo", "video", "audio", "document", "voice", "sticker"]),
+  senderName: varchar("senderName", { length: 255 }),
   isRead: boolean("isRead").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
