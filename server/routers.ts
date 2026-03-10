@@ -898,6 +898,76 @@ export const appRouter = router({
           activeAccounts: activeAccounts?.count ?? 0,
         };
       }),
+
+    // Per-account message activity stats
+    accountStats: protectedProcedure
+      .input(z.object({
+        period: z.enum(["today", "week", "month", "all"]).default("week"),
+      }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return { stats: [], period: input.period };
+        const now = Date.now();
+        let fromTs: number | null = null;
+        if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
+        else if (input.period === "week") fromTs = now - 7 * 24 * 60 * 60 * 1000;
+        else if (input.period === "month") fromTs = now - 30 * 24 * 60 * 60 * 1000;
+
+        const accounts = await db.select({
+          id: telegramAccounts.id,
+          username: telegramAccounts.username,
+          firstName: telegramAccounts.firstName,
+          lastName: telegramAccounts.lastName,
+          status: telegramAccounts.status,
+        }).from(telegramAccounts);
+
+        const stats = await Promise.all(accounts.map(async (acc) => {
+          const [sentRow] = await db.execute(
+            fromTs
+              ? sql`SELECT COUNT(*) as cnt FROM messages m WHERE m.dialogId IN (SELECT id FROM dialogs WHERE telegramAccountId = ${acc.id}) AND m.direction = 'outgoing' AND m.createdAt >= ${fromTs}`
+              : sql`SELECT COUNT(*) as cnt FROM messages m WHERE m.dialogId IN (SELECT id FROM dialogs WHERE telegramAccountId = ${acc.id}) AND m.direction = 'outgoing'`
+          ) as any;
+          const [recvRow] = await db.execute(
+            fromTs
+              ? sql`SELECT COUNT(*) as cnt FROM messages m WHERE m.dialogId IN (SELECT id FROM dialogs WHERE telegramAccountId = ${acc.id}) AND m.direction = 'incoming' AND m.createdAt >= ${fromTs}`
+              : sql`SELECT COUNT(*) as cnt FROM messages m WHERE m.dialogId IN (SELECT id FROM dialogs WHERE telegramAccountId = ${acc.id}) AND m.direction = 'incoming'`
+          ) as any;
+          const [activeRow] = await db.execute(
+            fromTs
+              ? sql`SELECT COUNT(DISTINCT dialogId) as cnt FROM messages WHERE dialogId IN (SELECT id FROM dialogs WHERE telegramAccountId = ${acc.id}) AND createdAt >= ${fromTs}`
+              : sql`SELECT COUNT(DISTINCT dialogId) as cnt FROM messages WHERE dialogId IN (SELECT id FROM dialogs WHERE telegramAccountId = ${acc.id})`
+          ) as any;
+          const [newRow] = await db.execute(
+            fromTs
+              ? sql`SELECT COUNT(*) as cnt FROM dialogs WHERE telegramAccountId = ${acc.id} AND createdAt >= ${fromTs}`
+              : sql`SELECT COUNT(*) as cnt FROM dialogs WHERE telegramAccountId = ${acc.id}`
+          ) as any;
+          const [needsRow] = await db.execute(
+            sql`SELECT COUNT(*) as cnt FROM dialogs WHERE telegramAccountId = ${acc.id} AND status = 'needs_reply'`
+          ) as any;
+          const [avgRow] = await db.execute(
+            fromTs
+              ? sql`SELECT AVG(diff) as avg_ms FROM (SELECT MIN(m2.createdAt) - m1.createdAt as diff FROM messages m1 JOIN messages m2 ON m2.dialogId = m1.dialogId AND m2.direction = 'outgoing' AND m2.createdAt > m1.createdAt WHERE m1.direction = 'incoming' AND m1.dialogId IN (SELECT id FROM dialogs WHERE telegramAccountId = ${acc.id}) AND m1.createdAt >= ${fromTs} GROUP BY m1.id) t WHERE diff > 0 AND diff < 86400000`
+              : sql`SELECT AVG(diff) as avg_ms FROM (SELECT MIN(m2.createdAt) - m1.createdAt as diff FROM messages m1 JOIN messages m2 ON m2.dialogId = m1.dialogId AND m2.direction = 'outgoing' AND m2.createdAt > m1.createdAt WHERE m1.direction = 'incoming' AND m1.dialogId IN (SELECT id FROM dialogs WHERE telegramAccountId = ${acc.id}) GROUP BY m1.id) t WHERE diff > 0 AND diff < 86400000`
+          ) as any;
+
+          return {
+            accountId: acc.id,
+            username: acc.username,
+            firstName: acc.firstName,
+            lastName: acc.lastName,
+            status: acc.status,
+            sent: Number((sentRow as any[])[0]?.cnt ?? 0),
+            received: Number((recvRow as any[])[0]?.cnt ?? 0),
+            activeDialogs: Number((activeRow as any[])[0]?.cnt ?? 0),
+            newDialogs: Number((newRow as any[])[0]?.cnt ?? 0),
+            needsReply: Number((needsRow as any[])[0]?.cnt ?? 0),
+            avgResponseMs: Number((avgRow as any[])[0]?.avg_ms ?? 0),
+          };
+        }));
+
+        return { stats, period: input.period };
+      }),
   }),
 
   // ─── Bitrix Settings ─────────────────────────────────────────────────────────
@@ -1233,10 +1303,9 @@ export const appRouter = router({
 
         const successCount = results.filter(r => r.ok).length;
         const failCount = results.filter(r => !r.ok).length;
-        return { successCount, failCount, total: targets.length, results };
+          return { successCount, failCount, total: targets.length, results };
       }),
   }),
 
 });
-
 export type AppRouter = typeof appRouter;

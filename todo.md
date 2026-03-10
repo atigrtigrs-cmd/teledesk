@@ -147,3 +147,13 @@
 - [x] Add needs_reply and archived to dialog status enum in schema
 - [x] Add "Требует ответа" and "Архив" filter tabs in Inbox
 - [x] Color-code status badges in dialog cards
+
+## Smart Heuristic Dialog Status
+- [ ] Re-assign statuses using keyword heuristics (resolved/needs_reply/waiting/archived)
+- [ ] Add heuristic auto-update on every new message in telegram.ts
+
+## Analytics Page
+- [x] Add analytics.accountStats tRPC procedure (messages sent/received, dialogs, avg response time)
+- [x] Build Analytics page with period filter (today/week/month/all)
+- [x] Per-account stats table with all metrics
+- [x] Add Analytics link to sidebar navigation (already existed)

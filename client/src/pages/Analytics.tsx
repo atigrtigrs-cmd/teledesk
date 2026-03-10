@@ -11,7 +11,7 @@ import {
 import {
   MessageSquare, TrendingUp, Users, Briefcase, Trophy, Activity,
   MailOpen, ChevronUp, ChevronDown, Minus, Bot, Filter, X, Tag,
-  Clock, CheckCircle,
+  Clock, CheckCircle, AlertCircle, UserPlus,
 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -78,6 +78,7 @@ export default function Analytics() {
   const { data: summaryByPeriod } = trpc.analytics.summaryByPeriod.useQuery(filterParams);
   const { data: managers } = trpc.analytics.managerStats.useQuery({ period });
   const { data: userStats, isLoading: userStatsLoading } = trpc.analytics.managerUserStats.useQuery(filterParams);
+  const { data: accountStatsData } = trpc.analytics.accountStats.useQuery({ period });
   const { data: daily } = trpc.analytics.dailyActivity.useQuery({ period: chartPeriod, accountId: filterAccountId });
   const { data: recent } = trpc.analytics.recentDialogs.useQuery();
   const { data: allTags } = trpc.tags.list.useQuery();
@@ -613,6 +614,83 @@ export default function Analytics() {
                               {u.assigned > 0 ? `${closeRate}%` : "—"}
                             </span>
                           </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ─── Account Activity Stats ──────────────────────────────────────────── */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-bold flex items-center gap-2">
+            <Bot className="h-4 w-4 text-primary" />
+            Активность Telegram-аккаунтов
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {!accountStatsData || accountStatsData.stats.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">Нет данных</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50 text-muted-foreground text-xs">
+                    <th className="text-left px-4 py-3 font-medium">Аккаунт</th>
+                    <th className="text-right px-4 py-3 font-medium">Отправлено</th>
+                    <th className="text-right px-4 py-3 font-medium">Получено</th>
+                    <th className="text-right px-4 py-3 font-medium">Активных диалогов</th>
+                    <th className="text-right px-4 py-3 font-medium">Новых диалогов</th>
+                    <th className="text-right px-4 py-3 font-medium">Требуют ответа</th>
+                    <th className="text-right px-4 py-3 font-medium">Ср. время ответа</th>
+                    <th className="text-right px-4 py-3 font-medium">Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {accountStatsData.stats.map((acc) => {
+                    const name = acc.username ? `@${acc.username}` : [acc.firstName, acc.lastName].filter(Boolean).join(" ") || `Аккаунт #${acc.accountId}`;
+                    const avgMs = acc.avgResponseMs;
+                    let avgStr = "—";
+                    if (avgMs > 0) {
+                      const totalSec = Math.round(avgMs / 1000);
+                      if (totalSec < 60) avgStr = `${totalSec} сек`;
+                      else if (totalSec < 3600) avgStr = `${Math.round(totalSec / 60)} мин`;
+                      else avgStr = `${Math.floor(totalSec / 3600)} ч ${Math.round((totalSec % 3600) / 60)} мин`;
+                    }
+                    return (
+                      <tr key={acc.accountId} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="font-medium">{name}</div>
+                          {acc.username && (acc.firstName || acc.lastName) && (
+                            <div className="text-xs text-muted-foreground">{[acc.firstName, acc.lastName].filter(Boolean).join(" ")}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-blue-400">{acc.sent.toLocaleString("ru")}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-green-400">{acc.received.toLocaleString("ru")}</td>
+                        <td className="px-4 py-3 text-right">{acc.activeDialogs.toLocaleString("ru")}</td>
+                        <td className="px-4 py-3 text-right">{acc.newDialogs.toLocaleString("ru")}</td>
+                        <td className="px-4 py-3 text-right">
+                          {acc.needsReply > 0
+                            ? <span className="text-red-400 font-semibold">{acc.needsReply}</span>
+                            : <span className="text-muted-foreground">0</span>
+                          }
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={avgMs > 0 && avgMs < 300000 ? "text-green-400" : avgMs > 0 && avgMs < 3600000 ? "text-amber-400" : avgMs > 0 ? "text-red-400" : "text-muted-foreground"}>
+                            {avgStr}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            acc.status === "active" ? "bg-green-500/15 text-green-400" : "bg-muted text-muted-foreground"
+                          }`}>
+                            {acc.status === "active" ? "Активен" : acc.status ?? "—"}
+                          </span>
                         </td>
                       </tr>
                     );
