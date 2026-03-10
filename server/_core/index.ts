@@ -64,9 +64,14 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
     // Restore all active Telegram sessions after server is up
-    restoreAllSessions().catch(err =>
-      console.error("[Startup] Failed to restore Telegram sessions:", err)
-    );
+    // Skip in development to avoid AUTH_KEY_DUPLICATED conflicts with Render production
+    if (process.env.NODE_ENV !== "development") {
+      restoreAllSessions().catch(err =>
+        console.error("[Startup] Failed to restore Telegram sessions:", err)
+      );
+    } else {
+      console.log("[Startup] Skipping Telegram session restore in development mode");
+    }
   });
 }
 

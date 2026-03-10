@@ -152,6 +152,11 @@
 - [ ] Re-assign statuses using keyword heuristics (resolved/needs_reply/waiting/archived)
 - [ ] Add heuristic auto-update on every new message in telegram.ts
 
+## Fix: Accounts Showing Disconnected
+- [x] Disable restoreAllSessions() in development mode (NODE_ENV=development) to prevent AUTH_KEY_DUPLICATED conflicts with Render
+- [x] Fix restoreAllSessions() to not mark accounts as disconnected on AUTH_KEY_DUPLICATED (session valid but already in use)
+- [x] Restore all 4 account statuses to 'active' in database
+
 ## Analytics Page
 - [x] Add analytics.accountStats tRPC procedure (messages sent/received, dialogs, avg response time)
 - [x] Build Analytics page with period filter (today/week/month/all)

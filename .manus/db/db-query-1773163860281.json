@@ -1,0 +1,46 @@
+{
+  "query": "SELECT id, username, firstName, lastName, status, syncStatus, updatedAt FROM telegram_accounts ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, username, firstName, lastName, status, syncStatus, updatedAt FROM telegram_accounts ORDER BY id;",
+  "rows": [
+    {
+      "id": "120002",
+      "username": "lilkek_support",
+      "firstName": "LC",
+      "lastName": "Support",
+      "status": "disconnected",
+      "syncStatus": "done",
+      "updatedAt": "2026-03-10 10:15:59"
+    },
+    {
+      "id": "150001",
+      "username": "affiliate_LeadCash",
+      "firstName": "Менеджер LeadCash",
+      "lastName": "NULL",
+      "status": "disconnected",
+      "syncStatus": "done",
+      "updatedAt": "2026-03-10 09:23:16"
+    },
+    {
+      "id": "150002",
+      "username": "LeadCash_Affiliate",
+      "firstName": "Ulyana",
+      "lastName": "LeadCash",
+      "status": "disconnected",
+      "syncStatus": "done",
+      "updatedAt": "2026-03-10 09:23:19"
+    },
+    {
+      "id": "150004",
+      "username": "LeadCash_manager",
+      "firstName": "Irina",
+      "lastName": "Koripenko",
+      "status": "disconnected",
+      "syncStatus": "done",
+      "updatedAt": "2026-03-10 09:29:00"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tfirstName\tlastName\tstatus\tsyncStatus\tupdatedAt\n120002\tlilkek_support\tLC\tSupport\tdisconnected\tdone\t2026-03-10 10:15:59\n150001\taffiliate_LeadCash\tМенеджер LeadCash\tNULL\tdisconnected\tdone\t2026-03-10 09:23:16\n150002\tLeadCash_Affiliate\tUlyana\tLeadCash\tdisconnected\tdone\t2026-03-10 09:23:19\n150004\tLeadCash_manager\tIrina\tKoripenko\tdisconnected\tdone\t2026-03-10 09:29:00\n",
+  "stderr": "",
+  "execution_time_ms": 102
+}

@@ -1,0 +1,38 @@
+{
+  "query": "SELECT id, username, firstName, status, LENGTH(sessionString) as sessionLen FROM telegram_accounts ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, username, firstName, status, LENGTH(sessionString) as sessionLen FROM telegram_accounts ORDER BY id;",
+  "rows": [
+    {
+      "id": "120002",
+      "username": "lilkek_support",
+      "firstName": "LC",
+      "status": "disconnected",
+      "sessionLen": "369"
+    },
+    {
+      "id": "150001",
+      "username": "affiliate_LeadCash",
+      "firstName": "Менеджер LeadCash",
+      "status": "disconnected",
+      "sessionLen": "369"
+    },
+    {
+      "id": "150002",
+      "username": "LeadCash_Affiliate",
+      "firstName": "Ulyana",
+      "status": "disconnected",
+      "sessionLen": "369"
+    },
+    {
+      "id": "150004",
+      "username": "LeadCash_manager",
+      "firstName": "Irina",
+      "status": "disconnected",
+      "sessionLen": "369"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tfirstName\tstatus\tsessionLen\n120002\tlilkek_support\tLC\tdisconnected\t369\n150001\taffiliate_LeadCash\tМенеджер LeadCash\tdisconnected\t369\n150002\tLeadCash_Affiliate\tUlyana\tdisconnected\t369\n150004\tLeadCash_manager\tIrina\tdisconnected\t369\n",
+  "stderr": "",
+  "execution_time_ms": 63
+}

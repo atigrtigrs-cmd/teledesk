@@ -70,12 +70,19 @@ export async function restoreAllSessions(): Promise<void> {
       try {
         await connectAccount(acc.id, acc.sessionString);
         console.log(`[Telegram] Restored session for account #${acc.id}`);
-      } catch (err) {
-        console.error(`[Telegram] Failed to restore account #${acc.id}:`, err);
-        await db
-          .update(telegramAccounts)
-          .set({ status: "disconnected" })
-          .where(eq(telegramAccounts.id, acc.id));
+      } catch (err: any) {
+        const errMsg = String(err?.message ?? err ?? "");
+        // AUTH_KEY_DUPLICATED means the session is valid but already in use elsewhere
+        // (e.g. another server instance). Don't mark as disconnected — just skip.
+        if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
+          console.warn(`[Telegram] Account #${acc.id} AUTH_KEY_DUPLICATED — session already active elsewhere, skipping`);
+        } else {
+          console.error(`[Telegram] Failed to restore account #${acc.id}:`, err);
+          await db
+            .update(telegramAccounts)
+            .set({ status: "disconnected" })
+            .where(eq(telegramAccounts.id, acc.id));
+        }
       }
     }
   } catch (err) {
