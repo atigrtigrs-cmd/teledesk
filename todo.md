@@ -219,3 +219,8 @@
 - [x] Fixed delete account: now properly deletes messages, dialogTags, dialogs, autoReplies before deleting account (FK cascade)
 - [x] Added onError handler to delete mutation in Accounts.tsx
 - [x] Verified TypeScript compiles cleanly (0 errors)
+
+## Fix forceSyncAll errors on Render (Mar 12)
+- [x] Check Render logs for exact error from forceSyncAll (AUTH_KEY_DUPLICATED — duplicate connection attempt)
+- [x] Fix root cause: rewrote forceSyncAll to reuse connectAccount() + syncAccountHistory() instead of duplicating all logic
+- [ ] Verify sync actually works after deploy
