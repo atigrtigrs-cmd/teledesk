@@ -180,3 +180,10 @@
 - [x] Analytics: show manager name from account.managerId (not assigneeId on dialog)
 - [x] Analytics: managerStats procedure uses account.managerId for grouping
 - [ ] Inbox: show manager name on dialog card based on account (pending)
+
+## Fix: Real-time Message Sync (All Accounts)
+- [x] Audit telegram.ts: how newMessage events are captured per account
+- [x] Check why some dialogs/messages from some accounts are missing — was filtering only User entities, skipping groups/channels
+- [x] Fix: ensure all dialogs are synced on account connect (not just history import)
+- [x] Fix: real-time newMessage handler saves ALL message types (private, group, channel)
+- [x] Fix: sync missed messages on reconnect (gap fill using lastSyncAt)

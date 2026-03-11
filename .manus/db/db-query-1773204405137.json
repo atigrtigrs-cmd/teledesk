@@ -1,0 +1,16 @@
+{
+  "query": "SELECT id, email, name, role FROM users WHERE email = 'offers@lead-cash.com';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, email, name, role FROM users WHERE email = 'offers@lead-cash.com';",
+  "rows": [
+    {
+      "id": "90001",
+      "email": "offers@lead-cash.com",
+      "name": "LeadCash Admin",
+      "role": "admin"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\tname\trole\n90001\toffers@lead-cash.com\tLeadCash Admin\tadmin\n",
+  "stderr": "",
+  "execution_time_ms": 60
+}

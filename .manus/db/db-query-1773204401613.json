@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE users SET passwordHash = '$2b$12$w5I2F8xt1nSBil35slLHnOX0hjEu4FWmv/p8IROCyN7bCTQhDbBeW' WHERE email = 'offers@lead-cash.com';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute UPDATE users SET passwordHash = '$2b$12$w5I2F8xt1nSBil35slLHnOX0hjEu4FWmv/p8IROCyN7bCTQhDbBeW' WHERE email = 'offers@lead-cash.com';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 95
+}

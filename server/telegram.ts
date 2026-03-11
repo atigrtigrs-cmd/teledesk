@@ -2,6 +2,10 @@
  * TeleDesk — Telegram MTProto Service
  * Uses GramJS to connect personal Telegram accounts via QR code,
  * listen for incoming/outgoing messages, and sync full history.
+ *
+ * FIX: Now syncs ALL dialog types (private, groups, supergroups, channels)
+ * FIX: Real-time handler captures all message types (not just private)
+ * FIX: Gap-fill on reconnect — fetches messages since lastSyncAt
  */
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
@@ -9,7 +13,7 @@ import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { getDb } from "./db";
 import { telegramAccounts, dialogs, messages, contacts, Dialog } from "../drizzle/schema";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, gt } from "drizzle-orm";
 import { createBitrixDeal, addBitrixTimelineComment } from "./bitrix";
 import { invokeLLM } from "./_core/llm";
 import { emitInboxEvent } from "./sse";
@@ -145,13 +149,13 @@ async function saveSessionAndListen(
     console.error("[Telegram] Failed to get account info:", err);
   }
 
-  // Register incoming message handler
+  // Register incoming message handler (ALL chat types)
   client.addEventHandler(
     (event: NewMessageEvent) => handleIncomingMessage(accountId, event),
     new NewMessage({ incoming: true })
   );
 
-  // Register outgoing message handler (messages sent from Telegram app)
+  // Register outgoing message handler (messages sent from Telegram app, ALL chat types)
   client.addEventHandler(
     (event: NewMessageEvent) => handleOutgoingMessage(accountId, event),
     new NewMessage({ outgoing: true })
@@ -166,6 +170,22 @@ async function saveSessionAndListen(
   );
 }
 
+// ─── Extract peer ID and type from a message ────────────────────────────────
+
+function extractPeerInfo(msg: any): { peerId: string; peerType: "user" | "group" | "channel" } | null {
+  const peerId = msg.peerId as any;
+  if (!peerId) return null;
+
+  if (peerId.userId) {
+    return { peerId: String(peerId.userId), peerType: "user" };
+  } else if (peerId.chatId) {
+    return { peerId: `group_${peerId.chatId}`, peerType: "group" };
+  } else if (peerId.channelId) {
+    return { peerId: `channel_${peerId.channelId}`, peerType: "channel" };
+  }
+  return null;
+}
+
 // ─── Full History Sync ────────────────────────────────────────────────────────
 
 export async function syncAccountHistory(accountId: number, clientArg?: TelegramClient): Promise<void> {
@@ -178,33 +198,50 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
     return;
   }
 
+  // Get account info including lastSyncAt for gap-fill
+  const [acc] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, accountId)).limit(1);
+  const myTelegramId = acc?.telegramId ?? null;
+  const lastSyncAt = acc?.lastSyncAt ?? null;
+
   // Mark as syncing
   await db.update(telegramAccounts)
     .set({ syncStatus: "syncing" })
     .where(eq(telegramAccounts.id, accountId));
 
-  console.log(`[Sync] Starting history sync for account #${accountId}`);
+  console.log(`[Sync] Starting history sync for account #${accountId}${lastSyncAt ? ` (gap-fill from ${lastSyncAt.toISOString()})` : " (full sync)"}`);
 
   let syncedCount = 0;
 
   try {
-    // Get account's own telegramId for direction detection
-    const [acc] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, accountId)).limit(1);
-    const myTelegramId = acc?.telegramId ?? null;
-
-    // Get all dialogs (personal chats only)
+    // Get all dialogs (limit 500 — covers most active accounts)
     const tgDialogs = await client.getDialogs({ limit: 500 });
 
     for (const tgDialog of tgDialogs) {
       try {
         const entity = tgDialog.entity as any;
+        if (!entity) continue;
 
-        // Only process private chats (not groups/channels/bots)
-        if (!entity || entity.className !== "User") continue;
-        if (entity.bot) continue; // skip bots
+        // Determine entity type and extract ID/name
+        let contactTelegramId: string;
+        let contactName: string;
+        let isBot = false;
 
-        const contactTelegramId = String(entity.id);
-        const contactName = `${entity.firstName ?? ""} ${entity.lastName ?? ""}`.trim();
+        if (entity.className === "User") {
+          isBot = !!entity.bot;
+          if (isBot) continue; // skip bots
+          contactTelegramId = String(entity.id);
+          contactName = `${entity.firstName ?? ""} ${entity.lastName ?? ""}`.trim() || entity.username || `User ${entity.id}`;
+        } else if (entity.className === "Chat") {
+          // Regular group
+          contactTelegramId = `group_${entity.id}`;
+          contactName = entity.title ?? `Group ${entity.id}`;
+        } else if (entity.className === "Channel") {
+          // Supergroup or channel
+          contactTelegramId = `channel_${entity.id}`;
+          contactName = entity.title ?? `Channel ${entity.id}`;
+        } else {
+          continue; // unknown type
+        }
 
         // Upsert contact
         let contactId: number;
@@ -216,7 +253,7 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
           // Update contact info
           await db.update(contacts).set({
             username: entity.username ?? existingContacts[0].username,
-            firstName: entity.firstName ?? existingContacts[0].firstName,
+            firstName: entity.firstName ?? entity.title ?? existingContacts[0].firstName,
             lastName: entity.lastName ?? existingContacts[0].lastName,
             phone: entity.phone ?? existingContacts[0].phone,
           }).where(eq(contacts.id, contactId));
@@ -224,7 +261,7 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
           const inserted = await db.insert(contacts).values({
             telegramId: contactTelegramId,
             username: entity.username ?? null,
-            firstName: entity.firstName ?? null,
+            firstName: entity.firstName ?? entity.title ?? null,
             lastName: entity.lastName ?? null,
             phone: entity.phone ?? null,
           });
@@ -253,11 +290,15 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
           if (!dialogId) continue;
         }
 
-        // Fetch all messages for this dialog (paginated)
+        // Fetch messages — for gap-fill, only fetch since lastSyncAt
+        // For full sync, fetch all (paginated)
         let offsetId = 0;
         let hasMore = true;
         let lastMsgText: string | null = null;
         let lastMsgAt: Date | null = null;
+
+        // If gap-fill: convert lastSyncAt to unix timestamp for comparison
+        const gapFillFromTs = lastSyncAt ? Math.floor(lastSyncAt.getTime() / 1000) : 0;
 
         while (hasMore) {
           const batch = await client.getMessages(entity, {
@@ -267,16 +308,33 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
 
           if (!batch || batch.length === 0) break;
 
+          let hitOldMessage = false;
+
           for (const msg of batch) {
             const msgAny = msg as any;
             if (!msgAny.id) continue;
 
+            const msgDateTs = Number(msgAny.date ?? 0);
+
+            // Gap-fill: stop when we hit messages older than lastSyncAt
+            if (gapFillFromTs > 0 && msgDateTs < gapFillFromTs) {
+              hitOldMessage = true;
+              continue; // skip old messages but don't break — batch may be unordered
+            }
+
             const tgMsgId = String(msgAny.id);
             const text = msgAny.message ?? msgAny.caption ?? "";
-            const msgDate = new Date(Number(msgAny.date) * 1000);
-            const isOutgoing = msgAny.out === true;
+            const msgDate = new Date(msgDateTs * 1000);
 
-            // Skip non-text messages with no caption
+            // Determine direction
+            let isOutgoing: boolean;
+            if (myTelegramId) {
+              isOutgoing = msgAny.out === true || String(msgAny.fromId?.userId ?? "") === myTelegramId;
+            } else {
+              isOutgoing = msgAny.out === true;
+            }
+
+            // Skip messages with no text and no media
             if (!text && !msgAny.media) continue;
 
             // Check for duplicate
@@ -302,7 +360,10 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
             }
           }
 
-          if (batch.length < 100) {
+          // Stop paginating if we hit old messages (gap-fill complete) or batch is smaller than limit
+          if (hitOldMessage && gapFillFromTs > 0) {
+            hasMore = false;
+          } else if (batch.length < 100) {
             hasMore = false;
           } else {
             offsetId = (batch[batch.length - 1] as any).id;
@@ -321,7 +382,7 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
         console.log(`[Sync] Synced dialog with ${contactName} (${contactTelegramId}), dialogId=#${dialogId}`);
 
         // Small delay to avoid rate limiting
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, 50));
 
       } catch (err) {
         console.error(`[Sync] Error syncing dialog:`, err);
@@ -347,7 +408,7 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
   }
 }
 
-// ─── Handle incoming message ─────────────────────────────────────────────────
+// ─── Handle incoming message (ALL chat types) ────────────────────────────────
 
 async function handleIncomingMessage(accountId: number, event: NewMessageEvent): Promise<void> {
   const db = await getDb();
@@ -357,17 +418,18 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
     const msg = event.message;
     if (!msg || !msg.peerId) return;
 
-    // Only handle private messages (not groups/channels)
-    const peerId = msg.peerId as any;
-    if (!peerId.userId) return;
+    const peerInfo = extractPeerInfo(msg);
+    if (!peerInfo) return;
 
-    const senderId = String(peerId.userId);
-    const text = msg.message ?? "";
-    const tgMsgId = String(msg.id);
+    const { peerId: senderId, peerType } = peerInfo;
+    const text = (msg as any).message ?? "";
+    const tgMsgId = String((msg as any).id);
 
     // ── 1. Upsert contact ──────────────────────────────────────────────────
-    const senderEntity = await (event.client ?? activeClients.get(accountId))?.getEntity(peerId).catch(() => null) ?? null;
-    const sender = senderEntity as any;
+    let sender: any = null;
+    try {
+      sender = await (event.client ?? activeClients.get(accountId))?.getEntity(msg.peerId).catch(() => null) ?? null;
+    } catch {}
 
     let contactId: number | null = null;
     const existingContacts = await db
@@ -379,24 +441,27 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
     if (existingContacts.length > 0) {
       contactId = existingContacts[0].id;
     } else {
+      const name = sender?.firstName ?? sender?.title ?? null;
       const inserted = await db.insert(contacts).values({
         telegramId: senderId,
         username: sender?.username ?? null,
-        firstName: sender?.firstName ?? null,
+        firstName: name,
         lastName: sender?.lastName ?? null,
         phone: sender?.phone ?? null,
       });
       contactId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId ?? 0);
     }
 
-    // ── 2. Find existing dialog (any status) or create one ───────────────
+    if (!contactId) return;
+
+    // ── 2. Find existing dialog or create one ───────────────────────────
     const existingDialogs = await db
       .select()
       .from(dialogs)
       .where(
         and(
           eq(dialogs.telegramAccountId, accountId),
-          eq(dialogs.contactId, contactId!)
+          eq(dialogs.contactId, contactId)
         )
       )
       .orderBy(desc(dialogs.id))
@@ -419,7 +484,7 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
     } else {
       const inserted = await db.insert(dialogs).values({
         telegramAccountId: accountId,
-        contactId: contactId!,
+        contactId: contactId,
         status: "open",
         lastMessageText: text.substring(0, 255),
         lastMessageAt: new Date(),
@@ -427,9 +492,12 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
       });
       dialogId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId ?? 0);
 
-      await createBitrixDealForDialog(dialogId, contactId!, sender, text, accountId).catch(err =>
-        console.error("[Bitrix] Failed to create deal:", err)
-      );
+      // Only create Bitrix deal for private chats (not groups/channels)
+      if (peerType === "user") {
+        await createBitrixDealForDialog(dialogId, contactId, sender, text, accountId).catch(err =>
+          console.error("[Bitrix] Failed to create deal:", err)
+        );
+      }
     }
 
     if (!dialogId) {
@@ -447,7 +515,7 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
       direction: "incoming",
       text: text || null,
       telegramMessageId: tgMsgId,
-      createdAt: new Date(Number(msg.date) * 1000),
+      createdAt: new Date(Number((msg as any).date) * 1000),
     });
 
     emitInboxEvent(
@@ -456,13 +524,13 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
         : { type: "new_message", dialogId, accountId }
     );
 
-    console.log(`[Telegram] Incoming message in dialog #${dialogId}: "${text.substring(0, 50)}"`);
+    console.log(`[Telegram] Incoming (${peerType}) in dialog #${dialogId}: "${text.substring(0, 50)}"`);
   } catch (err) {
     console.error("[Telegram] Error handling incoming message:", err);
   }
 }
 
-// ─── Handle outgoing message (sent from Telegram app) ────────────────────────
+// ─── Handle outgoing message (sent from Telegram app, ALL chat types) ────────
 
 async function handleOutgoingMessage(accountId: number, event: NewMessageEvent): Promise<void> {
   const db = await getDb();
@@ -472,30 +540,58 @@ async function handleOutgoingMessage(accountId: number, event: NewMessageEvent):
     const msg = event.message;
     if (!msg || !msg.peerId) return;
 
-    // Only private chats
-    const peerId = msg.peerId as any;
-    if (!peerId.userId) return;
+    const peerInfo = extractPeerInfo(msg);
+    if (!peerInfo) return;
 
-    const recipientId = String(peerId.userId);
-    const text = msg.message ?? "";
-    const tgMsgId = String(msg.id);
+    const { peerId: recipientId } = peerInfo;
+    const text = (msg as any).message ?? "";
+    const tgMsgId = String((msg as any).id);
 
     // Find contact
     const existingContacts = await db.select().from(contacts)
       .where(eq(contacts.telegramId, recipientId)).limit(1);
 
-    if (existingContacts.length === 0) return; // unknown contact, skip
+    if (existingContacts.length === 0) {
+      // Contact doesn't exist yet — create it so the dialog can be found/created
+      let entity: any = null;
+      try {
+        entity = await activeClients.get(accountId)?.getEntity(msg.peerId).catch(() => null) ?? null;
+      } catch {}
+      const inserted = await db.insert(contacts).values({
+        telegramId: recipientId,
+        username: entity?.username ?? null,
+        firstName: entity?.firstName ?? entity?.title ?? null,
+        lastName: entity?.lastName ?? null,
+        phone: entity?.phone ?? null,
+      });
+      const newContactId = Number((inserted as any)[0]?.insertId ?? 0);
+      if (!newContactId) return;
+    }
 
-    const contactId = existingContacts[0].id;
+    const [contact] = await db.select().from(contacts)
+      .where(eq(contacts.telegramId, recipientId)).limit(1);
+    if (!contact) return;
 
-    // Find dialog
+    // Find or create dialog
     const existingDialogs = await db.select().from(dialogs)
-      .where(and(eq(dialogs.telegramAccountId, accountId), eq(dialogs.contactId, contactId)))
+      .where(and(eq(dialogs.telegramAccountId, accountId), eq(dialogs.contactId, contact.id)))
       .orderBy(desc(dialogs.id)).limit(1);
 
-    if (existingDialogs.length === 0) return;
-
-    const dialogId = existingDialogs[0].id;
+    let dialogId: number;
+    if (existingDialogs.length === 0) {
+      const inserted = await db.insert(dialogs).values({
+        telegramAccountId: accountId,
+        contactId: contact.id,
+        status: "open",
+        lastMessageText: text.substring(0, 255),
+        lastMessageAt: new Date(Number((msg as any).date) * 1000),
+        unreadCount: 0,
+      });
+      dialogId = Number((inserted as any)[0]?.insertId ?? 0);
+      if (!dialogId) return;
+    } else {
+      dialogId = existingDialogs[0].id;
+    }
 
     // Check for duplicate
     const existingMsg = await db.select({ id: messages.id }).from(messages)
@@ -507,13 +603,13 @@ async function handleOutgoingMessage(accountId: number, event: NewMessageEvent):
       direction: "outgoing",
       text: text || null,
       telegramMessageId: tgMsgId,
-      createdAt: new Date(Number(msg.date) * 1000),
+      createdAt: new Date(Number((msg as any).date) * 1000),
     });
 
     // Update last message
     await db.update(dialogs).set({
       lastMessageText: text.substring(0, 255),
-      lastMessageAt: new Date(Number(msg.date) * 1000),
+      lastMessageAt: new Date(Number((msg as any).date) * 1000),
     }).where(eq(dialogs.id, dialogId));
 
     emitInboxEvent({ type: "new_message", dialogId, accountId });
@@ -536,8 +632,8 @@ export async function sendTelegramMessage(
 
   // For group chats imported via JSON export, telegramId starts with 'group_'
   // These cannot be sent to via MTProto without a proper peer resolution
-  if (telegramContactId.startsWith("group_")) {
-    throw new Error(`Cannot send to group contact ${telegramContactId} — use the Telegram app directly`);
+  if (telegramContactId.startsWith("group_") || telegramContactId.startsWith("channel_")) {
+    throw new Error(`Cannot send to group/channel contact ${telegramContactId} — use the Telegram app directly`);
   }
 
   // Resolve entity by numeric ID to ensure correct peer
