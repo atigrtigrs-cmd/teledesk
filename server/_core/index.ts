@@ -69,6 +69,15 @@ async function startServer() {
       restoreAllSessions().catch(err =>
         console.error("[Startup] Failed to restore Telegram sessions:", err)
       );
+      // Auto-reconnect watchdog: every 5 minutes, reconnect any disconnected accounts
+      setInterval(async () => {
+        try {
+          console.log("[Watchdog] Checking Telegram account connections...");
+          await restoreAllSessions();
+        } catch (err) {
+          console.error("[Watchdog] Auto-reconnect failed:", err);
+        }
+      }, 5 * 60 * 1000);
     } else {
       console.log("[Startup] Skipping Telegram session restore in development mode");
     }

@@ -38,6 +38,22 @@ import { useState, useRef, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 
+function formatDateSeparator(date: Date | string): string {
+  const d = new Date(date);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (msgDay.getTime() === today.getTime()) return "Сегодня";
+  if (msgDay.getTime() === yesterday.getTime()) return "Вчера";
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
+}
+
+function isSameDay(a: Date | string, b: Date | string): boolean {
+  const da = new Date(a), db = new Date(b);
+  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
+}
+
 function timeAgo(date: Date | string | null | undefined): string {
   if (!date) return "";
   const d = new Date(date);
@@ -78,7 +94,11 @@ const statusColors: Record<string, string> = {
 export default function DialogDetail() {
   const params = useParams<{ id: string }>();
   const dialogId = parseInt(params.id ?? "0");
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  // Preserve account filter when going back: /inbox/123?account=5 → /inbox?account=5
+  const searchParams = new URLSearchParams(location.split("?")[1] ?? "");
+  const backAccountId = searchParams.get("account");
+  const backUrl = backAccountId ? `/inbox?account=${backAccountId}` : "/inbox";
   const [text, setText] = useState("");
   const [noteText, setNoteText] = useState("");
   const [inputMode, setInputMode] = useState<InputMode>("message");
@@ -180,7 +200,7 @@ export default function DialogDetail() {
         <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card/80 backdrop-blur-sm shrink-0">
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setLocation("/inbox")}>
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setLocation(backUrl)}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
 
@@ -311,19 +331,30 @@ export default function DialogDetail() {
                 <p className="text-sm text-muted-foreground">Нет сообщений</p>
               </div>
             ) : (
-              msgs.map(msg => {
+              msgs.map((msg, idx) => {
                 const isOutgoing = msg.direction === "outgoing";
                 const isNote = msg.direction === "note";
+                const prevMsg = idx > 0 ? msgs[idx - 1] : null;
+                const showDateSep = !prevMsg || !isSameDay(msg.createdAt, prevMsg.createdAt);
 
                 if (isNote) {
                   return (
-                    <div key={msg.id} className="flex justify-center">
-                      <div className="max-w-[80%] px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-start gap-2">
-                        <StickyNote className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-400" />
-                        <div>
-                          <p className="font-semibold text-amber-400 mb-0.5">Внутренняя заметка</p>
-                          <p className="leading-relaxed">{msg.text}</p>
-                          <p className="mt-1 opacity-60">{new Date(msg.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</p>
+                    <div key={msg.id}>
+                      {showDateSep && (
+                        <div className="flex items-center gap-3 my-3">
+                          <div className="flex-1 h-px bg-border" />
+                          <span className="text-xs text-muted-foreground px-2 shrink-0">{formatDateSeparator(msg.createdAt)}</span>
+                          <div className="flex-1 h-px bg-border" />
+                        </div>
+                      )}
+                      <div className="flex justify-center">
+                        <div className="max-w-[80%] px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-start gap-2">
+                          <StickyNote className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-400" />
+                          <div>
+                            <p className="font-semibold text-amber-400 mb-0.5">Внутренняя заметка</p>
+                            <p className="leading-relaxed">{msg.text}</p>
+                            <p className="mt-1 opacity-60">{new Date(msg.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -335,21 +366,30 @@ export default function DialogDetail() {
                   : (msg as any).senderName || contactName;
 
                 return (
-                  <div key={msg.id} className={`flex flex-col ${isOutgoing ? "items-end" : "items-start"}`}>
-                    {!isOutgoing && senderLabel && (
-                      <span className="text-xs text-muted-foreground font-medium mb-0.5 px-1">{senderLabel}</span>
+                  <div key={msg.id}>
+                    {showDateSep && (
+                      <div className="flex items-center gap-3 my-3">
+                        <div className="flex-1 h-px bg-border" />
+                        <span className="text-xs text-muted-foreground px-2 shrink-0">{formatDateSeparator(msg.createdAt)}</span>
+                        <div className="flex-1 h-px bg-border" />
+                      </div>
                     )}
-                    <div className={`max-w-[72%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                      isOutgoing
-                        ? "bg-primary text-primary-foreground rounded-br-sm shadow shadow-primary/20"
-                        : "bg-card border border-border rounded-bl-sm"
-                    }`}>
-                      {msg.text ?? <span className="italic text-xs opacity-60">[медиафайл]</span>}
-                      <div className={`flex items-center gap-1 mt-1 ${isOutgoing ? "justify-end" : "justify-start"}`}>
-                        <span className="text-xs opacity-50">
-                          {new Date(msg.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                        {isOutgoing && <CheckCheck className="h-3 w-3 opacity-50" />}
+                    <div className={`flex flex-col ${isOutgoing ? "items-end" : "items-start"}`}>
+                      {!isOutgoing && senderLabel && (
+                        <span className="text-xs text-muted-foreground font-medium mb-0.5 px-1">{senderLabel}</span>
+                      )}
+                      <div className={`max-w-[72%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                        isOutgoing
+                          ? "bg-primary text-primary-foreground rounded-br-sm shadow shadow-primary/20"
+                          : "bg-card border border-border rounded-bl-sm"
+                      }`}>
+                        {msg.text ?? <span className="italic text-xs opacity-60">[медиафайл]</span>}
+                        <div className={`flex items-center gap-1 mt-1 ${isOutgoing ? "justify-end" : "justify-start"}`}>
+                          <span className="text-xs opacity-50">
+                            {new Date(msg.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {isOutgoing && <CheckCheck className="h-3 w-3 opacity-50" />}
+                        </div>
                       </div>
                     </div>
                   </div>

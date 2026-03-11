@@ -114,12 +114,16 @@ function getAvatarColor(name: string) {
 }
 
 export default function Inbox() {
+  const [location, setLocation] = useLocation();
+  // Restore account filter from URL query param (e.g. /inbox?account=5)
+  const urlSearchParams = new URLSearchParams(location.split("?")[1] ?? "");
+  const urlAccountId = urlSearchParams.get("account") ? parseInt(urlSearchParams.get("account")!) : undefined;
+
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState<"all" | "mine" | "unassigned">("all");
   const [selectedTagId, setSelectedTagId] = useState<number | undefined>(undefined);
-  const [selectedAccountId, setSelectedAccountId] = useState<number | undefined>(undefined);
-  const [, setLocation] = useLocation();
+  const [selectedAccountId, setSelectedAccountId] = useState<number | undefined>(urlAccountId);
   const { user } = useAuth();
 
   // Bulk selection state
@@ -396,7 +400,7 @@ export default function Inbox() {
                           return next;
                         });
                       } else {
-                        setLocation(`/inbox/${dialog.id}`);
+                        setLocation(`/inbox/${dialog.id}${selectedAccountId ? `?account=${selectedAccountId}` : ""}`);
                       }
                     }}
                   >

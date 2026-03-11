@@ -191,3 +191,8 @@
 ## Analytics: Replace Manager Table with Telegram Account Table
 - [x] Replace "Эффективность аффилейт-менеджеров" table to show stats per Telegram account (using accountStats)
 - [x] Columns: аккаунт, менеджер, диалогов, открытых, отправлено, получено, требуют ответа, ср. время ответа
+
+## Bug Fixes (feedback from colleague)
+- [x] Bug 1: No dates shown in chat messages (need date separators in dialog view)
+- [x] Bug 2: Back button from dialog shows ALL dialogs instead of account-filtered list
+- [x] Bug 3: Accounts keep disconnecting — added auto-reconnect watchdog every 5 min on Render
