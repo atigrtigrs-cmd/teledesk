@@ -73,6 +73,13 @@ export async function restoreAllSessions(): Promise<void> {
 
     for (const acc of accounts) {
       if (!acc.sessionString) continue;
+
+      // Skip accounts already connected in this process — no need to reconnect
+      if (activeClients.has(acc.id)) {
+        // console.log(`[Telegram] Account #${acc.id} already connected, skipping`);
+        continue;
+      }
+
       try {
         await connectAccount(acc.id, acc.sessionString);
         console.log(`[Telegram] Restored session for account #${acc.id}`);
@@ -82,12 +89,19 @@ export async function restoreAllSessions(): Promise<void> {
         // (e.g. another server instance). Don't mark as disconnected — just skip.
         if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
           console.warn(`[Telegram] Account #${acc.id} AUTH_KEY_DUPLICATED — session already active elsewhere, skipping`);
+          // Keep status as-is — the session IS valid, just used by another process
+        } else if (errMsg.includes("FLOOD_WAIT")) {
+          // Rate limited — don't mark as disconnected, just wait
+          console.warn(`[Telegram] Account #${acc.id} FLOOD_WAIT — rate limited, will retry later`);
         } else {
           console.error(`[Telegram] Failed to restore account #${acc.id}:`, err);
-          await db
-            .update(telegramAccounts)
-            .set({ status: "disconnected" })
-            .where(eq(telegramAccounts.id, acc.id));
+          // Only mark as disconnected for genuine auth failures (e.g. session revoked)
+          if (errMsg.includes("SESSION_REVOKED") || errMsg.includes("AUTH_KEY_INVALID") || errMsg.includes("USER_DEACTIVATED")) {
+            await db
+              .update(telegramAccounts)
+              .set({ status: "disconnected" })
+              .where(eq(telegramAccounts.id, acc.id));
+          }
         }
       }
     }
@@ -878,4 +892,36 @@ export async function verifyTwoFAPassword(
 
 export function getActiveAccountIds(): number[] {
   return Array.from(activeClients.keys());
+}
+
+// ─── Keep-alive ping for all active clients ───────────────────────────────────
+// Sends a lightweight getMe() request to each active MTProto client every 2 minutes
+// to prevent Render's idle connection timeout from dropping sessions.
+
+export async function keepAliveAll(): Promise<void> {
+  const db = await getDb();
+  for (const [accountId, client] of Array.from(activeClients.entries())) {
+    try {
+      await client.getMe();
+      // console.log(`[KeepAlive] Account #${accountId} is alive`);
+    } catch (err: any) {
+      const errMsg = String(err?.message ?? err ?? "");
+      if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
+        // Session is valid but used by another instance — remove from active map
+        // so the watchdog will reconnect it properly
+        activeClients.delete(accountId);
+        console.warn(`[KeepAlive] Account #${accountId} AUTH_KEY_DUPLICATED — removed from active map, watchdog will reconnect`);
+      } else {
+        console.error(`[KeepAlive] Account #${accountId} ping failed:`, err);
+        // Remove from active map so watchdog reconnects it
+        activeClients.delete(accountId);
+        // Mark as disconnected in DB so UI shows correct status
+        if (db) {
+          await db.update(telegramAccounts)
+            .set({ status: "disconnected" })
+            .where(eq(telegramAccounts.id, accountId));
+        }
+      }
+    }
+  }
 }

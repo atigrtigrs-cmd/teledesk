@@ -198,5 +198,11 @@
 - [x] Bug 3: Accounts keep disconnecting — added auto-reconnect watchdog every 5 min on Render
 
 ## Critical Bugs (Mar 11)
-- [ ] Accounts keep showing "Отключён" on Render — fix root cause (session restore failing silently)
+- [x] Accounts keep showing "Отключён" on Render — fixed: skip already-connected, only disconnect on SESSION_REVOKED/AUTH_KEY_INVALID
 - [ ] Delete account button not working — fix the delete mutation/handler
+
+## Sync All + Keep-Alive (Mar 11)
+- [x] Add accounts.syncAll tRPC procedure (runs syncAccountHistory for all connected accounts)
+- [x] Add "Обновить входящие" button in Inbox page header
+- [x] Fix keep-alive: don't set status=disconnected on transient errors (AUTH_KEY_DUPLICATED, network timeout)
+- [x] Add silent ping every 2 min to keep MTProto connections alive on Render

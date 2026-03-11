@@ -8,7 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { sseHandler } from "../sse";
-import { restoreAllSessions } from "../telegram";
+import { restoreAllSessions, keepAliveAll } from "../telegram";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -69,6 +69,16 @@ async function startServer() {
       restoreAllSessions().catch(err =>
         console.error("[Startup] Failed to restore Telegram sessions:", err)
       );
+      // Keep-alive ping: every 2 minutes, send a lightweight getMe() to each active client
+      // This prevents Render's idle connection timeout from dropping MTProto sessions
+      setInterval(async () => {
+        try {
+          await keepAliveAll();
+        } catch (err) {
+          console.error("[KeepAlive] Ping failed:", err);
+        }
+      }, 2 * 60 * 1000);
+
       // Auto-reconnect watchdog: every 5 minutes, reconnect any disconnected accounts
       setInterval(async () => {
         try {

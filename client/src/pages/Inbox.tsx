@@ -17,6 +17,7 @@ import {
   ChevronDown,
   UserCheck,
   UserX,
+  RefreshCw,
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -147,6 +148,15 @@ export default function Inbox() {
     telegramAccountId: selectedAccountId,
   });
 
+  // Sync all accounts mutation
+  const syncAll = trpc.accounts.syncAll.useMutation({
+    onSuccess: (res) => {
+      toast.success(res.message);
+      utils.dialogs.list.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   // Bulk mutations
   const bulkUpdateStatus = trpc.dialogs.bulkUpdateStatus.useMutation({
     onSuccess: (res) => {
@@ -238,6 +248,16 @@ export default function Inbox() {
               <span className="text-xs font-bold text-muted-foreground bg-muted px-3 py-1.5 rounded-full border border-border">
                 {filteredData?.length ?? 0} диалогов
               </span>
+              {/* Refresh all incoming messages button */}
+              <button
+                onClick={() => syncAll.mutate()}
+                disabled={syncAll.isPending}
+                className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border bg-muted text-muted-foreground border-border hover:bg-accent hover:text-foreground transition-all disabled:opacity-50"
+                title="Обновить входящие сообщения по всем аккаунтам"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${syncAll.isPending ? 'animate-spin' : ''}`} />
+                Обновить
+              </button>
               {/* Bulk mode toggle */}
               <button
                 onClick={() => { setBulkMode(v => !v); setSelectedIds(new Set()); }}

@@ -208,6 +208,23 @@ export const appRouter = router({
         return { success: true, message: "Переподключение запущено" };
       }),
 
+    syncAll: protectedProcedure
+      .mutation(async () => {
+        // Sync history for all currently active accounts in background
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const accounts = await db.select().from(telegramAccounts);
+        let started = 0;
+        for (const acc of accounts) {
+          if (!acc.sessionString) continue;
+          started++;
+          syncAccountHistory(acc.id).catch(err =>
+            console.error(`[syncAll] Sync failed for account #${acc.id}:`, err)
+          );
+        }
+        return { success: true, message: `Синхронизация запущена для ${started} аккаунтов` };
+      }),
+
     assignManager: protectedProcedure
       .input(z.object({ id: z.number(), managerId: z.number().nullable() }))
       .mutation(async ({ input }) => {
