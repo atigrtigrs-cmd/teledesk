@@ -13,7 +13,7 @@ import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { getDb } from "./db";
 import { telegramAccounts, dialogs, messages, contacts, Dialog } from "../drizzle/schema";
-import { eq, and, desc, inArray, gt } from "drizzle-orm";
+import { eq, and, desc, inArray, gt, isNotNull } from "drizzle-orm";
 import { createBitrixDeal, addBitrixTimelineComment } from "./bitrix";
 import { invokeLLM } from "./_core/llm";
 import { emitInboxEvent } from "./sse";
@@ -64,10 +64,12 @@ export async function restoreAllSessions(): Promise<void> {
   if (!db) return;
 
   try {
+    // Restore ALL accounts that have a session string, regardless of current status.
+    // This ensures disconnected accounts are also reconnected by the watchdog.
     const accounts = await db
       .select()
       .from(telegramAccounts)
-      .where(eq(telegramAccounts.status, "active"));
+      .where(isNotNull(telegramAccounts.sessionString));
 
     for (const acc of accounts) {
       if (!acc.sessionString) continue;

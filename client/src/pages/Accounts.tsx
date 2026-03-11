@@ -134,6 +134,13 @@ export default function Accounts() {
   const deleteMutation = trpc.accounts.delete.useMutation({
     onSuccess: () => { toast.success("Аккаунт удалён"); refetch(); },
   });
+  const reconnectAllMutation = trpc.accounts.reconnectAll.useMutation({
+    onSuccess: () => {
+      toast.success("Переподключение запущено, подождите 10–30 секунд...");
+      setTimeout(() => refetch(), 20000);
+    },
+    onError: (err) => toast.error("Ошибка: " + err.message),
+  });
   const updateStatusMutation = trpc.accounts.updateStatus.useMutation({
     onSuccess: () => { toast.success("Статус обновлён"); refetch(); },
   });
@@ -340,10 +347,23 @@ export default function Accounts() {
             <p className="text-xs font-black text-primary tracking-widest uppercase mb-1">Интеграция</p>
             <h1 className="text-2xl font-black tracking-tight">Telegram аккаунты</h1>
           </div>
-          <Button onClick={handleOpenDialog} className="gap-2 font-bold shadow shadow-primary/25">
-            <Plus className="h-4 w-4" />
-            Добавить аккаунт
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => reconnectAllMutation.mutate()}
+              disabled={reconnectAllMutation.isPending}
+              className="gap-2 font-bold"
+            >
+              {reconnectAllMutation.isPending
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <RefreshCw className="h-4 w-4" />}
+              Переподключить
+            </Button>
+            <Button onClick={handleOpenDialog} className="gap-2 font-bold shadow shadow-primary/25">
+              <Plus className="h-4 w-4" />
+              Добавить аккаунт
+            </Button>
+          </div>
         </div>
 
         {/* Stats row */}

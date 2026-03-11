@@ -20,7 +20,7 @@ import { eq, desc, and, sql, gte, count, countDistinct, inArray } from "drizzle-
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
-import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, connectAccount, syncAccountHistory } from "./telegram";
+import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, connectAccount, syncAccountHistory, restoreAllSessions } from "./telegram";
 import { ENV } from "./_core/env";
 
 const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
@@ -197,6 +197,15 @@ export const appRouter = router({
           console.error(`[Sync] Manual sync failed for account #${input.accountId}:`, err)
         );
         return { success: true, message: "Синхронизация запущена" };
+      }),
+
+    reconnectAll: protectedProcedure
+      .mutation(async () => {
+        // Trigger restoreAllSessions in background — reconnects all accounts with a session string
+        restoreAllSessions().catch(err =>
+          console.error("[reconnectAll] Failed:", err)
+        );
+        return { success: true, message: "Переподключение запущено" };
       }),
 
     assignManager: protectedProcedure

@@ -196,3 +196,7 @@
 - [x] Bug 1: No dates shown in chat messages (need date separators in dialog view)
 - [x] Bug 2: Back button from dialog shows ALL dialogs instead of account-filtered list
 - [x] Bug 3: Accounts keep disconnecting — added auto-reconnect watchdog every 5 min on Render
+
+## Critical Bugs (Mar 11)
+- [ ] Accounts keep showing "Отключён" on Render — fix root cause (session restore failing silently)
+- [ ] Delete account button not working — fix the delete mutation/handler
