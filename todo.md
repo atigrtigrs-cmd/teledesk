@@ -187,3 +187,7 @@
 - [x] Fix: ensure all dialogs are synced on account connect (not just history import)
 - [x] Fix: real-time newMessage handler saves ALL message types (private, group, channel)
 - [x] Fix: sync missed messages on reconnect (gap fill using lastSyncAt)
+
+## Analytics: Replace Manager Table with Telegram Account Table
+- [x] Replace "Эффективность аффилейт-менеджеров" table to show stats per Telegram account (using accountStats)
+- [x] Columns: аккаунт, менеджер, диалогов, открытых, отправлено, получено, требуют ответа, ср. время ответа

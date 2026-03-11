@@ -517,103 +517,93 @@ export default function Analytics() {
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-bold flex items-center gap-2">
             <Trophy className="h-4 w-4 text-primary" />
-            Эффективность аффилейт-менеджеров
-            {hasActiveFilters && (
-              <Badge variant="outline" className="text-xs border-primary/40 text-primary gap-1">
-                <Filter className="h-2.5 w-2.5" />
-                Фильтр активен
-              </Badge>
-            )}
+            Эффективность Telegram-аккаунтов
           </CardTitle>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Clock className="h-3 w-3" />
             <span className="text-green-400 font-medium">≤5мин</span>
-            <span className="text-amber-400 font-medium">≤30мин</span>
-            <span className="text-red-400 font-medium">&gt;30мин</span>
+            <span className="text-amber-400 font-medium">≤1ч</span>
+            <span className="text-red-400 font-medium">&gt;1ч</span>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {userStatsLoading ? (
-            <div className="p-6 text-center text-sm text-muted-foreground">Загрузка...</div>
-          ) : !userStats?.length ? (
-            <div className="p-6 text-center text-sm text-muted-foreground">
-              {hasActiveFilters ? "Нет данных по выбранным фильтрам" : "Нет данных за выбранный период"}
-            </div>
+          {!accountStatsData || accountStatsData.stats.length === 0 ? (
+            <div className="p-6 text-center text-sm text-muted-foreground">Нет данных за выбранный период</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border/50 bg-muted/30">
                     <th className="text-left px-4 py-2.5 text-xs text-muted-foreground font-medium w-8">#</th>
+                    <th className="text-left px-4 py-2.5 text-xs text-muted-foreground font-medium">Аккаунт</th>
                     <th className="text-left px-4 py-2.5 text-xs text-muted-foreground font-medium">Менеджер</th>
-                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Назначено</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Диалогов</th>
                     <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Открытых</th>
-                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Закрытых</th>
                     <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Отправлено</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Получено</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Ждут ответа</th>
                     <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Ср. ответ</th>
-                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">% закрытия</th>
+                    <th className="text-right px-4 py-2.5 text-xs text-muted-foreground font-medium">Статус</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {userStats.map((u, i) => {
-                    const closeRate = u.assigned > 0 ? Math.round((u.closed / u.assigned) * 100) : 0;
+                  {accountStatsData.stats.map((acc, i) => {
+                    const accName = acc.username ? `@${acc.username}` : [acc.firstName, acc.lastName].filter(Boolean).join(" ") || `Аккаунт #${acc.accountId}`;
+                    const avgMs = acc.avgResponseMs;
+                    let avgStr = "—";
+                    if (avgMs > 0) {
+                      const totalSec = Math.round(avgMs / 1000);
+                      if (totalSec < 60) avgStr = `${totalSec} сек`;
+                      else if (totalSec < 3600) avgStr = `${Math.round(totalSec / 60)} мин`;
+                      else avgStr = `${Math.floor(totalSec / 3600)} ч ${Math.round((totalSec % 3600) / 60)} мин`;
+                    }
+                    const managerName = (acc as any).managerName;
                     return (
-                      <tr
-                        key={u.userId}
-                        className={`border-b border-border/30 hover:bg-muted/20 transition-colors ${
-                          filterManagerId === u.userId ? "bg-primary/5" : ""
-                        }`}
-                      >
+                      <tr key={acc.accountId} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-3 text-lg">{MEDAL[i] ?? <span className="text-xs text-muted-foreground">{i + 1}</span>}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <div
-                              className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0 cursor-pointer hover:bg-primary/30"
-                              onClick={() => setFilterManagerId(filterManagerId === u.userId ? undefined : u.userId)}
-                              title="Фильтровать по этому менеджеру"
-                            >
-                              {u.name.charAt(0).toUpperCase()}
+                            <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                              {accName.replace("@", "").charAt(0).toUpperCase()}
                             </div>
                             <div>
-                              <div className="font-semibold">{u.name}</div>
-                              <div className="text-xs text-muted-foreground capitalize">{u.role}</div>
+                              <div className="font-semibold">{accName}</div>
+                              {acc.username && (acc.firstName || acc.lastName) && (
+                                <div className="text-xs text-muted-foreground">{[acc.firstName, acc.lastName].filter(Boolean).join(" ")}</div>
+                              )}
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right font-bold">{u.assigned}</td>
+                        <td className="px-4 py-3">
+                          {managerName ? (
+                            <span className="text-xs font-medium">{managerName}</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/50 italic">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold">{acc.activeDialogs.toLocaleString("ru")}</td>
                         <td className="px-4 py-3 text-right">
-                          <span className={u.open > 0 ? "text-blue-400" : "text-muted-foreground"}>{u.open}</span>
+                          <span className={acc.needsReply > 0 ? "text-blue-400" : "text-muted-foreground"}>{acc.activeDialogs.toLocaleString("ru")}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-blue-400">{acc.sent.toLocaleString("ru")}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-green-400">{acc.received.toLocaleString("ru")}</td>
+                        <td className="px-4 py-3 text-right">
+                          {acc.needsReply > 0
+                            ? <span className="text-red-400 font-semibold">{acc.needsReply}</span>
+                            : <span className="text-muted-foreground">0</span>
+                          }
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className={u.closed > 0 ? "text-green-400 font-bold" : "text-muted-foreground"}>{u.closed}</span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-muted-foreground">{u.sentMessages}</td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={
-                            u.avgResponseMinutes === null ? "text-muted-foreground" :
-                            u.avgResponseMinutes <= 5 ? "text-green-400 font-bold" :
-                            u.avgResponseMinutes <= 30 ? "text-amber-400" :
-                            "text-red-400"
-                          }>
-                            {formatMinutes(u.avgResponseMinutes)}
+                          <span className={avgMs > 0 && avgMs < 300000 ? "text-green-400 font-bold" : avgMs > 0 && avgMs < 3600000 ? "text-amber-400" : avgMs > 0 ? "text-red-400" : "text-muted-foreground"}>
+                            {avgStr}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <div className="w-16 bg-muted/50 rounded-full h-1.5 hidden sm:block">
-                              <div
-                                className={`h-1.5 rounded-full ${closeRate >= 70 ? "bg-green-400" : closeRate >= 30 ? "bg-amber-400" : "bg-muted-foreground/40"}`}
-                                style={{ width: `${Math.min(closeRate, 100)}%` }}
-                              />
-                            </div>
-                            <span className={
-                              closeRate >= 70 ? "text-green-400 font-bold" :
-                              closeRate >= 30 ? "text-amber-400 font-bold" :
-                              "text-muted-foreground"
-                            }>
-                              {u.assigned > 0 ? `${closeRate}%` : "—"}
-                            </span>
-                          </div>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            acc.status === "active" ? "bg-green-500/15 text-green-400" : "bg-muted text-muted-foreground"
+                          }`}>
+                            {acc.status === "active" ? "Активен" : "Откл."}
+                          </span>
                         </td>
                       </tr>
                     );
