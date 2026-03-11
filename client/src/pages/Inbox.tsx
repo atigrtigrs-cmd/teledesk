@@ -151,10 +151,14 @@ export default function Inbox() {
   // Sync all accounts mutation
   const syncAll = trpc.accounts.syncAll.useMutation({
     onSuccess: (res) => {
-      toast.success(res.message);
+      toast.success(res.message, {
+        description: res.details || undefined,
+        duration: 6000,
+      });
       utils.dialogs.list.invalidate();
+      utils.accounts.list.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error(`Ошибка синхронизации: ${err.message}`),
   });
 
   // Bulk mutations
@@ -252,11 +256,15 @@ export default function Inbox() {
               <button
                 onClick={() => syncAll.mutate()}
                 disabled={syncAll.isPending}
-                className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border bg-muted text-muted-foreground border-border hover:bg-accent hover:text-foreground transition-all disabled:opacity-50"
-                title="Обновить входящие сообщения по всем аккаунтам"
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border transition-all ${
+                  syncAll.isPending
+                    ? "bg-primary/20 text-primary border-primary/30 cursor-wait"
+                    : "bg-muted text-muted-foreground border-border hover:bg-accent hover:text-foreground"
+                }`}
+                title="Подгрузить все диалоги всех Telegram-аккаунтов"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${syncAll.isPending ? 'animate-spin' : ''}`} />
-                Обновить
+                {syncAll.isPending ? "Синхронизация..." : "Обновить"}
               </button>
               {/* Bulk mode toggle */}
               <button

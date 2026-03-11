@@ -20,7 +20,7 @@ import { eq, desc, and, sql, gte, count, countDistinct, inArray } from "drizzle-
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
-import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, connectAccount, syncAccountHistory, restoreAllSessions } from "./telegram";
+import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, connectAccount, syncAccountHistory, restoreAllSessions, forceSyncAll } from "./telegram";
 import { ENV } from "./_core/env";
 
 const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
@@ -210,19 +210,23 @@ export const appRouter = router({
 
     syncAll: protectedProcedure
       .mutation(async () => {
-        // Sync history for all currently active accounts in background
-        const db = await getDb();
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-        const accounts = await db.select().from(telegramAccounts);
-        let started = 0;
-        for (const acc of accounts) {
-          if (!acc.sessionString) continue;
-          started++;
-          syncAccountHistory(acc.id).catch(err =>
-            console.error(`[syncAll] Sync failed for account #${acc.id}:`, err)
-          );
+        // Force sync ALL accounts: connect if needed, then sync all dialogs
+        // This runs synchronously and returns the result
+        try {
+          const result = await forceSyncAll();
+          const accountSummary = result.accounts
+            .map(a => `@${a.username ?? a.id}: ${a.dialogs} диалогов${a.error ? ` (ошибка)` : ""}`)
+            .join(", ");
+          return {
+            success: true,
+            message: `Синхронизировано ${result.synced} диалогов по ${result.accounts.length} аккаунтам`,
+            details: accountSummary,
+            synced: result.synced,
+            errors: result.errors,
+          };
+        } catch (err: any) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
         }
-        return { success: true, message: `Синхронизация запущена для ${started} аккаунтов` };
       }),
 
     assignManager: protectedProcedure

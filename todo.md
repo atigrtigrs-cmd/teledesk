@@ -206,3 +206,10 @@
 - [x] Add "Обновить входящие" button in Inbox page header
 - [x] Fix keep-alive: don't set status=disconnected on transient errors (AUTH_KEY_DUPLICATED, network timeout)
 - [x] Add silent ping every 2 min to keep MTProto connections alive on Render
+
+## Fix Sync All Dialogs (Mar 11)
+- [x] Diagnose why syncAccountHistory misses dialogs — check limit, client availability, error handling
+- [x] Fix syncAll to reconnect accounts if not in activeClients before syncing (forceSyncAll)
+- [x] Remove 500 dialog limit or paginate properly to get ALL dialogs
+- [x] Add progress/result feedback: show how many dialogs/messages were synced
+- [x] Ensure syncAll works even when accounts show "disconnected" in DB
