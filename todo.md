@@ -213,3 +213,9 @@
 - [x] Remove 500 dialog limit or paginate properly to get ALL dialogs
 - [x] Add progress/result feedback: show how many dialogs/messages were synced
 - [x] Ensure syncAll works even when accounts show "disconnected" in DB
+
+## Double-Check Audit (Mar 11)
+- [x] Removed broken raw API (require() calls) from forceSyncAll — now uses only getDialogs(limit=1000)
+- [x] Fixed delete account: now properly deletes messages, dialogTags, dialogs, autoReplies before deleting account (FK cascade)
+- [x] Added onError handler to delete mutation in Accounts.tsx
+- [x] Verified TypeScript compiles cleanly (0 errors)

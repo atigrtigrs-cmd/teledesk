@@ -992,78 +992,21 @@ export async function forceSyncAll(): Promise<{ synced: number; errors: number; 
       }
     }
 
-    // Step 2: Sync dialogs — reset lastSyncAt so we get ALL dialogs (not just gap-fill)
+    // Step 2: Sync dialogs — clear lastSyncAt so we get ALL dialogs (not just gap-fill)
     try {
-      // Temporarily clear lastSyncAt so we do a FULL sync (not just gap-fill)
       await db.update(telegramAccounts)
         .set({ syncStatus: "syncing", lastSyncAt: null })
         .where(eq(telegramAccounts.id, acc.id));
 
-      // Get ALL dialogs (no limit — paginate through all)
-      let allDialogs: any[] = [];
-      let offsetDate = 0;
-      let offsetId = 0;
-      let offsetPeer: any = undefined;
-      let page = 0;
-      const PAGE_SIZE = 100;
-
-      while (true) {
-        const batch = await (client as any).invoke(
-          new (require("telegram/tl/functions/messages").GetDialogsRequest)({
-            offsetDate,
-            offsetId,
-            offsetPeer: offsetPeer ?? new (require("telegram/tl/types").InputPeerEmpty)(),
-            limit: PAGE_SIZE,
-            hash: BigInt(0),
-          })
-        ).catch(() => null);
-
-        if (!batch || !batch.dialogs || batch.dialogs.length === 0) break;
-
-        allDialogs = allDialogs.concat(batch.dialogs);
-        page++;
-
-        if (batch.dialogs.length < PAGE_SIZE) break;
-
-        // Prepare next page offset
-        const lastDialog = batch.dialogs[batch.dialogs.length - 1];
-        const lastMsg = batch.messages?.find((m: any) => m.id === lastDialog.topMessage);
-        if (lastMsg) {
-          offsetDate = lastMsg.date;
-          offsetId = lastMsg.id;
-          offsetPeer = lastDialog.peer;
-        } else {
-          break;
-        }
-
-        // Rate limit protection
-        await new Promise(r => setTimeout(r, 300));
-      }
-
-      console.log(`[ForceSyncAll] Account #${acc.id}: got ${allDialogs.length} dialogs via raw API`);
-
-      // Fall back to getDialogs() if raw API fails
-      if (allDialogs.length === 0) {
-        const tgDialogs = await client.getDialogs({ limit: 1000 });
-        console.log(`[ForceSyncAll] Account #${acc.id}: fallback getDialogs() returned ${tgDialogs.length}`);
-        // Use syncAccountHistory with the connected client
-        await syncAccountHistory(acc.id, client);
-        const [updated] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, acc.id)).limit(1);
-        const dialogCount = updated?.syncedDialogs ?? 0;
-        results.push({ id: acc.id, username: acc.username, dialogs: dialogCount });
-        totalSynced += dialogCount;
-        continue;
-      }
-
-      // Process each dialog
-      let syncedCount = 0;
+      // Get account info for direction detection
       const [accInfo] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, acc.id)).limit(1);
       const myTelegramId = accInfo?.telegramId ?? null;
 
-      // Build entity map from batch
-      // Use getDialogs() which returns entities properly
+      // Fetch all dialogs via GramJS (handles pagination internally)
       const tgDialogs = await client.getDialogs({ limit: 1000 });
       console.log(`[ForceSyncAll] Account #${acc.id}: getDialogs() returned ${tgDialogs.length} dialogs`);
+
+      let syncedCount = 0;
 
       for (const tgDialog of tgDialogs) {
         try {

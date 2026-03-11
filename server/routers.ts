@@ -102,6 +102,16 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         await disconnectAccount(input.id).catch(() => {});
+        // Delete messages for all dialogs belonging to this account (FK constraint)
+        const accountDialogs = await db.select({ id: dialogs.id }).from(dialogs)
+          .where(eq(dialogs.telegramAccountId, input.id));
+        if (accountDialogs.length > 0) {
+          const dialogIds = accountDialogs.map(d => d.id);
+          await db.delete(messages).where(inArray(messages.dialogId, dialogIds));
+          await db.delete(dialogTags).where(inArray(dialogTags.dialogId, dialogIds));
+          await db.delete(dialogs).where(eq(dialogs.telegramAccountId, input.id));
+        }
+        await db.delete(autoReplies).where(eq(autoReplies.telegramAccountId, input.id));
         await db.delete(telegramAccounts).where(eq(telegramAccounts.id, input.id));
         return { success: true };
       }),

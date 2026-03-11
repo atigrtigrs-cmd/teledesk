@@ -133,6 +133,7 @@ export default function Accounts() {
 
   const deleteMutation = trpc.accounts.delete.useMutation({
     onSuccess: () => { toast.success("Аккаунт удалён"); refetch(); },
+    onError: (err) => toast.error("Ошибка удаления: " + err.message),
   });
   const reconnectAllMutation = trpc.accounts.reconnectAll.useMutation({
     onSuccess: () => {
