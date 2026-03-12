@@ -267,3 +267,10 @@
 - [x] BUG-10: SSE /api/events has no auth — added JWT cookie verification before allowing subscription
 - [x] BUG-11: broadcast uses 50ms delay which is too aggressive — changed to 100ms + retry_after backoff on 429
 - [x] BUG-12: workingHours.upsert does N+1 SELECT+UPDATE/INSERT per day — replaced with INSERT...ON DUPLICATE KEY UPDATE
+
+## Real Sync Progress (Mar 13)
+- [ ] Add totalTgDialogs column to telegramAccounts schema (stores real count from Telegram)
+- [ ] Save totalTgDialogs at start of syncAccountHistory (after getDialogs fetches all)
+- [ ] Update syncProgress API to return totalTgDialogs per account
+- [ ] Update Inbox progress bar: show "X из Y диалогов в CRM" where Y = real Telegram count
+- [ ] Auto-refresh progress every 10s while sync is active

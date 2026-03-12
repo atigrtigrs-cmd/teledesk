@@ -720,6 +720,12 @@ async function syncAccountHistory(
 
     console.log(`[Worker] Total dialogs fetched: ${allDialogs.length}`);
 
+    // Save real total dialog count from Telegram so frontend can show accurate progress
+    await db
+      .update(telegramAccounts)
+      .set({ totalTgDialogs: allDialogs.length })
+      .where(eq(telegramAccounts.id, accountId));
+
     const gapFillFromTs = lastSyncAt
       ? Math.floor(lastSyncAt.getTime() / 1000)
       : 0;

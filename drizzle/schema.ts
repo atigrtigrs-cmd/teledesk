@@ -49,6 +49,7 @@ export const telegramAccounts = mysqlTable("telegram_accounts", {
   syncStatus: mysqlEnum("syncStatus", ["idle", "syncing", "done", "error"]).default("idle"),
   lastSyncAt: timestamp("lastSyncAt"),
   syncedDialogs: int("syncedDialogs").default(0),
+  totalTgDialogs: int("totalTgDialogs").default(0), // real total count from Telegram (set at sync start)
   lastError: text("lastError"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

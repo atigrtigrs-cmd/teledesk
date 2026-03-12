@@ -164,15 +164,19 @@ export default function Inbox() {
     { refetchInterval: 30_000 } // auto-refresh every 30 seconds
   );
 
-  // Sync progress polling — active when any account is syncing or idle
+  // Sync progress polling — always active, auto-refresh every 10s
   const { data: syncProgress } = trpc.accounts.syncProgress.useQuery(undefined, {
-    refetchInterval: 5_000,
+    refetchInterval: 10_000,
   });
 
-  const isSyncActive = syncProgress?.some(a => a.isSyncing || a.isIdle) ?? false;
-  const totalDialogs = syncProgress?.reduce((s, a) => s + a.totalDialogs, 0) ?? 0;
-  const syncedWithMessages = syncProgress?.reduce((s, a) => s + a.dialogsWithMessages, 0) ?? 0;
-  const syncPercent = totalDialogs > 0 ? Math.round((syncedWithMessages / totalDialogs) * 100) : 0;
+  const isSyncActive = syncProgress?.some(a => a.isSyncing) ?? false;
+  // totalTgDialogs = real count from Telegram (set after getDialogs completes)
+  // crmDialogs = dialogs already saved in our CRM
+  const totalTgDialogs = syncProgress?.reduce((s, a) => s + (a.totalTgDialogs ?? 0), 0) ?? 0;
+  const crmDialogs = syncProgress?.reduce((s, a) => s + (a.crmDialogs ?? 0), 0) ?? 0;
+  const syncPercent = totalTgDialogs > 0 ? Math.min(100, Math.round((crmDialogs / totalTgDialogs) * 100)) : 0;
+  // Show progress bar if syncing OR if we have real TG count to compare against
+  const showProgress = isSyncActive || totalTgDialogs > 0;
 
   // Sync all accounts mutation (async — runs in background, result via SSE)
   const syncAll = trpc.accounts.syncAll.useMutation({
@@ -303,16 +307,16 @@ export default function Inbox() {
             </div>
           </div>
 
-          {/* Sync progress bar — shown when syncing or idle */}
-          {isSyncActive && totalDialogs > 0 && (
+          {/* Sync progress bar — shows CRM coverage vs real Telegram dialog count */}
+          {showProgress && totalTgDialogs > 0 && (
             <div className="mb-3 rounded-xl bg-primary/5 border border-primary/20 px-4 py-2.5">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Синхронизация сообщений...
+                  {isSyncActive && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {isSyncActive ? "Синхронизация..." : "Покрытие CRM"}
                 </span>
                 <span className="text-xs font-bold text-muted-foreground">
-                  {syncedWithMessages} / {totalDialogs} диалогов ({syncPercent}%)
+                  {crmDialogs} из {totalTgDialogs} диалогов в CRM ({syncPercent}%)
                 </span>
               </div>
               <div className="w-full h-1.5 bg-primary/10 rounded-full overflow-hidden">
