@@ -250,6 +250,6 @@
 - [x] Clean existing supergroup dialogs from DB
 
 ## Move Worker into Main Server (Mar 13)
-- [ ] Move Worker startup into main Express server process (fix AUTH_KEY_DUPLICATED on Render)
-- [ ] Remove separate background worker service from Render
+- [x] Move Worker startup into main Express server process (fix AUTH_KEY_DUPLICATED on Render)
+- [x] Remove separate background worker service from Render
 - [ ] Verify sync starts automatically after deploy
