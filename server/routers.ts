@@ -264,6 +264,38 @@ export const appRouter = router({
         };
       }),
 
+    syncProgress: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const accs = await db.select({
+        id: telegramAccounts.id,
+        username: telegramAccounts.username,
+        syncStatus: telegramAccounts.syncStatus,
+        syncedDialogs: telegramAccounts.syncedDialogs,
+        lastSyncAt: telegramAccounts.lastSyncAt,
+      }).from(telegramAccounts);
+      // Count total dialogs per account
+      const dialogCounts = await db
+        .select({ accountId: dialogs.telegramAccountId, total: count(dialogs.id) })
+        .from(dialogs)
+        .groupBy(dialogs.telegramAccountId);
+      const dialogCountMap = new Map(dialogCounts.map(r => [r.accountId, r.total]));
+      // Count dialogs with messages per account
+      const withMsgCounts = await db
+        .select({ accountId: dialogs.telegramAccountId, withMsgs: countDistinct(messages.dialogId) })
+        .from(dialogs)
+        .innerJoin(messages, eq(messages.dialogId, dialogs.id))
+        .groupBy(dialogs.telegramAccountId);
+      const withMsgMap = new Map(withMsgCounts.map(r => [r.accountId, r.withMsgs]));
+      return accs.map(acc => ({
+        ...acc,
+        totalDialogs: dialogCountMap.get(acc.id) ?? 0,
+        dialogsWithMessages: withMsgMap.get(acc.id) ?? 0,
+        isSyncing: acc.syncStatus === "syncing",
+        isIdle: acc.syncStatus === "idle" || acc.lastSyncAt === null,
+      }));
+    }),
+
     assignManager: protectedProcedure
       .input(z.object({ id: z.number(), managerId: z.number().nullable() }))
       .mutation(async ({ input }) => {

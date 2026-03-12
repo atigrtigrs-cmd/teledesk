@@ -19,7 +19,7 @@ import {
   UserX,
   RefreshCw,
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
@@ -153,13 +153,26 @@ export default function Inbox() {
   const utils = trpc.useUtils();
 
   const assigneeId = assigneeFilter === "mine" ? user?.id : undefined;
-  const { data, isLoading } = trpc.dialogs.list.useQuery({
-    status: statusFilter,
-    search: search || undefined,
-    assigneeId,
-    tagId: selectedTagId,
-    telegramAccountId: selectedAccountId,
+  const { data, isLoading } = trpc.dialogs.list.useQuery(
+    {
+      status: statusFilter,
+      search: search || undefined,
+      assigneeId,
+      tagId: selectedTagId,
+      telegramAccountId: selectedAccountId,
+    },
+    { refetchInterval: 30_000 } // auto-refresh every 30 seconds
+  );
+
+  // Sync progress polling — active when any account is syncing or idle
+  const { data: syncProgress } = trpc.accounts.syncProgress.useQuery(undefined, {
+    refetchInterval: 5_000,
   });
+
+  const isSyncActive = syncProgress?.some(a => a.isSyncing || a.isIdle) ?? false;
+  const totalDialogs = syncProgress?.reduce((s, a) => s + a.totalDialogs, 0) ?? 0;
+  const syncedWithMessages = syncProgress?.reduce((s, a) => s + a.dialogsWithMessages, 0) ?? 0;
+  const syncPercent = totalDialogs > 0 ? Math.round((syncedWithMessages / totalDialogs) * 100) : 0;
 
   // Sync all accounts mutation (async — runs in background, result via SSE)
   const syncAll = trpc.accounts.syncAll.useMutation({
@@ -289,6 +302,27 @@ export default function Inbox() {
               </button>
             </div>
           </div>
+
+          {/* Sync progress bar — shown when syncing or idle */}
+          {isSyncActive && totalDialogs > 0 && (
+            <div className="mb-3 rounded-xl bg-primary/5 border border-primary/20 px-4 py-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Синхронизация сообщений...
+                </span>
+                <span className="text-xs font-bold text-muted-foreground">
+                  {syncedWithMessages} / {totalDialogs} диалогов ({syncPercent}%)
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-primary/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-500"
+                  style={{ width: `${syncPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Search */}
           <div className="relative mb-3">

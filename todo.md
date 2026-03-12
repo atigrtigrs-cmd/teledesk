@@ -242,3 +242,5 @@
 ## Fix Sender Attribution in Chat (Mar 12)
 - [ ] Fix sender attribution in chat view — show who sent each message (account owner vs contact vs other group member)
 - [ ] Ensure senderName is saved correctly during sync and real-time message handling
+- [x] Sync progress indicator — show synced/total dialogs with animated progress bar
+- [x] Auto-refresh Inbox dialog list every 30 seconds
