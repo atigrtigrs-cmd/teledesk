@@ -224,3 +224,8 @@
 - [x] Check Render logs for exact error from forceSyncAll (AUTH_KEY_DUPLICATED — duplicate connection attempt)
 - [x] Fix root cause: rewrote forceSyncAll to reuse connectAccount() + syncAccountHistory() instead of duplicating all logic
 - [x] Verify sync actually works after deploy (deployed, live on Render)
+
+## Fix AUTH_KEY_DUPLICATED (Mar 12)
+- [ ] Understand why AUTH_KEY_DUPLICATED happens on every connect attempt on Render
+- [ ] Fix connection logic so accounts actually connect and sync dialogs
+- [ ] Verify sync returns non-zero dialog count after deploy

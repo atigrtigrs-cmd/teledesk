@@ -80,27 +80,36 @@ export async function restoreAllSessions(): Promise<void> {
         continue;
       }
 
-      try {
-        await connectAccount(acc.id, acc.sessionString);
-        console.log(`[Telegram] Restored session for account #${acc.id}`);
-      } catch (err: any) {
-        const errMsg = String(err?.message ?? err ?? "");
-        // AUTH_KEY_DUPLICATED means the session is valid but already in use elsewhere
-        // (e.g. another server instance). Don't mark as disconnected — just skip.
-        if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
-          console.warn(`[Telegram] Account #${acc.id} AUTH_KEY_DUPLICATED — session already active elsewhere, skipping`);
-          // Keep status as-is — the session IS valid, just used by another process
-        } else if (errMsg.includes("FLOOD_WAIT")) {
-          // Rate limited — don't mark as disconnected, just wait
-          console.warn(`[Telegram] Account #${acc.id} FLOOD_WAIT — rate limited, will retry later`);
-        } else {
-          console.error(`[Telegram] Failed to restore account #${acc.id}:`, err);
-          // Only mark as disconnected for genuine auth failures (e.g. session revoked)
-          if (errMsg.includes("SESSION_REVOKED") || errMsg.includes("AUTH_KEY_INVALID") || errMsg.includes("USER_DEACTIVATED")) {
-            await db
-              .update(telegramAccounts)
-              .set({ status: "disconnected" })
-              .where(eq(telegramAccounts.id, acc.id));
+      // Retry with exponential backoff for AUTH_KEY_DUPLICATED
+      // (old Render process may still be alive for a few seconds)
+      let connected = false;
+      for (let attempt = 1; attempt <= 3 && !connected; attempt++) {
+        try {
+          await connectAccount(acc.id, acc.sessionString);
+          console.log(`[Telegram] Restored session for account #${acc.id} (attempt ${attempt})`);
+          connected = true;
+        } catch (err: any) {
+          const errMsg = String(err?.message ?? err ?? "");
+          if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
+            if (attempt < 3) {
+              const delay = attempt * 15000; // 15s, 30s
+              console.warn(`[Telegram] Account #${acc.id} AUTH_KEY_DUPLICATED (attempt ${attempt}/3) — waiting ${delay/1000}s before retry...`);
+              await new Promise(r => setTimeout(r, delay));
+            } else {
+              console.warn(`[Telegram] Account #${acc.id} AUTH_KEY_DUPLICATED after 3 attempts — session in use by another process`);
+            }
+          } else if (errMsg.includes("FLOOD_WAIT")) {
+            console.warn(`[Telegram] Account #${acc.id} FLOOD_WAIT — rate limited, will retry later`);
+            break;
+          } else {
+            console.error(`[Telegram] Failed to restore account #${acc.id}:`, err);
+            if (errMsg.includes("SESSION_REVOKED") || errMsg.includes("AUTH_KEY_INVALID") || errMsg.includes("USER_DEACTIVATED")) {
+              await db
+                .update(telegramAccounts)
+                .set({ status: "disconnected" })
+                .where(eq(telegramAccounts.id, acc.id));
+            }
+            break;
           }
         }
       }
@@ -926,10 +935,12 @@ export async function keepAliveAll(): Promise<void> {
   }
 }
 
-// ─── Force sync ALL accounts: connect if needed, then sync all dialogs ────────
-// This is called by the "Обновить" button in Inbox.
-// Self-contained: does NOT rely on syncAccountHistory() to avoid silent error swallowing.
-// Returns detailed per-account results including exact error messages.
+// ─── Force sync ALL accounts ──────────────────────────────────────────────────────────
+// Called by the "Обновить" button in Inbox.
+// IMPORTANT: Only uses already-connected clients from activeClients.
+// Never creates new connections to avoid AUTH_KEY_DUPLICATED.
+// AUTH_KEY_DUPLICATED happens when same session is used from 2 processes simultaneously
+// (e.g. old Render instance + new Render instance during deploy).
 
 export async function forceSyncAll(): Promise<{ synced: number; errors: number; accounts: { id: number; username: string | null; dialogs: number; error?: string }[] }> {
   const db = await getDb();
@@ -939,7 +950,8 @@ export async function forceSyncAll(): Promise<{ synced: number; errors: number; 
   const results: { id: number; username: string | null; dialogs: number; error?: string }[] = [];
   let totalErrors = 0;
 
-  console.log(`[ForceSyncAll] Starting sync for ${accounts.length} accounts. Active clients: [${Array.from(activeClients.keys()).join(', ')}]`);
+  const activeIds = Array.from(activeClients.keys());
+  console.log(`[ForceSyncAll] Starting sync. DB accounts: ${accounts.length}, Active clients: [${activeIds.join(', ')}]`);
 
   for (const acc of accounts) {
     if (!acc.sessionString) {
@@ -949,48 +961,31 @@ export async function forceSyncAll(): Promise<{ synced: number; errors: number; 
 
     let client = activeClients.get(acc.id);
 
-    // Step 1: Connect if not already in activeClients
+    // If not connected, try once to connect.
+    // Note: AUTH_KEY_DUPLICATED means another process is using the same session.
+    // The startup restoreAllSessions (with 30s grace + retry) handles this.
+    // Here we just do a single attempt — no long waits to avoid HTTP timeout.
     if (!client) {
-      console.log(`[ForceSyncAll] Account #${acc.id} not in activeClients, connecting...`);
+      console.log(`[ForceSyncAll] Account #${acc.id} (@${acc.username}) not in activeClients — attempting to connect...`);
       try {
-        const session = new StringSession(acc.sessionString);
-        const newClient = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
-          connectionRetries: 3,
-          useWSS: true,
-        });
-        await newClient.connect();
-        // Verify connection works
-        const me = await newClient.getMe() as any;
-        await db.update(telegramAccounts).set({
-          status: "active",
-          telegramId: String(me.id ?? ""),
-          username: me.username ?? acc.username,
-          firstName: me.firstName ?? acc.firstName,
-          lastName: me.lastName ?? acc.lastName,
-          phone: me.phone ?? acc.phone,
-        }).where(eq(telegramAccounts.id, acc.id));
-        // Register event handlers
-        newClient.addEventHandler(
-          (event: NewMessageEvent) => handleIncomingMessage(acc.id, event),
-          new NewMessage({ incoming: true })
-        );
-        newClient.addEventHandler(
-          (event: NewMessageEvent) => handleOutgoingMessage(acc.id, event),
-          new NewMessage({ outgoing: true })
-        );
-        activeClients.set(acc.id, newClient);
-        client = newClient;
-        console.log(`[ForceSyncAll] Account #${acc.id} (@${me.username}) connected successfully`);
-      } catch (connErr: any) {
-        const errMsg = String(connErr?.message ?? connErr ?? "");
-        console.error(`[ForceSyncAll] Failed to connect account #${acc.id}: ${errMsg}`);
-        results.push({ id: acc.id, username: acc.username, dialogs: 0, error: `connect: ${errMsg}` });
+        await connectAccount(acc.id, acc.sessionString);
+        client = activeClients.get(acc.id);
+        console.log(`[ForceSyncAll] Account #${acc.id} connected successfully`);
+      } catch (err: any) {
+        const connectErr = String(err?.message ?? err ?? "");
+        console.error(`[ForceSyncAll] Account #${acc.id} connect failed: ${connectErr}`);
+        results.push({ id: acc.id, username: acc.username, dialogs: 0, error: connectErr });
         totalErrors++;
         continue;
       }
-    } else {
-      console.log(`[ForceSyncAll] Account #${acc.id} already in activeClients, using existing connection`);
+      if (!client) {
+        results.push({ id: acc.id, username: acc.username, dialogs: 0, error: "Не удалось подключиться" });
+        totalErrors++;
+        continue;
+      }
     }
+
+    console.log(`[ForceSyncAll] Account #${acc.id} (@${acc.username}) connected, syncing dialogs...`);
 
     // Step 2: Get account info for direction detection
     const [accInfo] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, acc.id)).limit(1);
