@@ -235,4 +235,6 @@
 - [x] Make syncAll async (background) - returns immediately, result comes via SSE sync_complete event
 - [x] Add SSE sync_progress events for real-time feedback during sync
 - [x] Update Inbox.tsx to show toast when SSE sync_complete arrives
+- [x] Implement process lock (processLock.ts) — new process waits for old to die before connecting MTProto
+- [x] Simplify connectAccount — remove retry backoff (lock guarantees single process)
 - [ ] Verify sync returns non-zero dialog count after deploy

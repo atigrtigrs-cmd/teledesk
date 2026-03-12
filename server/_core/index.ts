@@ -9,6 +9,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { sseHandler } from "../sse";
 import { restoreAllSessions, keepAliveAll, getActiveAccountIds } from "../telegram";
+import { acquireProcessLock, waitForProcessLock } from "../processLock";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -78,15 +79,18 @@ async function startServer() {
     // Restore all active Telegram sessions after server is up
     // Skip in development to avoid AUTH_KEY_DUPLICATED conflicts with Render production
     if (process.env.NODE_ENV !== "development") {
-      // Wait 30 seconds before starting the first connection attempt.
-      // connectAccount() now handles AUTH_KEY_DUPLICATED internally with retries (30s, 60s, 90s).
-      // The 30s initial delay is just to let the HTTP server fully initialize.
-      console.log("[Startup] Waiting 30s before restoring Telegram sessions...");
-      setTimeout(() => {
-        restoreAllSessions().catch(err =>
-          console.error("[Startup] Failed to restore Telegram sessions:", err)
-        );
-      }, 30000);
+      // Acquire process lock immediately so other processes can detect us
+      acquireProcessLock();
+
+      // Wait for any previous process to fully die before connecting MTProto sessions.
+      // Render zero-downtime deploys keep old process alive for ~60-120s.
+      // We wait up to 3 minutes for the old process to die.
+      console.log("[Startup] Waiting for process lock before restoring Telegram sessions...");
+      waitForProcessLock(3 * 60 * 1000).then(() => {
+        return restoreAllSessions();
+      }).catch(err =>
+        console.error("[Startup] Failed to restore Telegram sessions:", err)
+      );
 
       // Keep-alive ping: every 3 minutes, send a lightweight getMe() to each active client
       // This prevents Render's idle connection timeout from dropping MTProto sessions

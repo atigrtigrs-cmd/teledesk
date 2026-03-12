@@ -147,51 +147,26 @@ export async function connectAccount(accountId: number, sessionString: string): 
   }
   connectingAccounts.add(accountId);
   try {
-    // Retry loop for AUTH_KEY_DUPLICATED — Render keeps old process alive for ~30-90s
-    // We retry up to 3 times with increasing delays: 30s, 60s, 90s
-    const retryDelays = [30000, 60000, 90000];
-    let lastErr: any = null;
-
-    for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
-      const session = new StringSession(sessionString);
-      const client = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
-        connectionRetries: 1,
-        retryDelay: 2000,
-        useWSS: false,
-        autoReconnect: true,
-      });
-      try {
-        console.log(`[Telegram] Account #${accountId} connect attempt ${attempt + 1}/${retryDelays.length + 1}...`);
-        await client.connect();
-        // Success — save session and start listening
-        await saveSessionAndListen(accountId, client, sessionString);
-        return; // done
-      } catch (err: any) {
-        const msg = String(err?.message ?? err ?? "");
-        lastErr = err;
-        try { await client.disconnect(); } catch (_) {}
-
-        if (msg.includes("AUTH_KEY_DUPLICATED")) {
-          if (attempt < retryDelays.length) {
-            const waitMs = retryDelays[attempt];
-            console.warn(`[Telegram] Account #${accountId} AUTH_KEY_DUPLICATED (attempt ${attempt + 1}) — waiting ${waitMs / 1000}s before retry...`);
-            await new Promise(r => setTimeout(r, waitMs));
-            // Check if another path already connected this account while we waited
-            if (activeClients.has(accountId)) {
-              console.log(`[Telegram] Account #${accountId} was connected by another path while waiting, skipping`);
-              return;
-            }
-          } else {
-            console.error(`[Telegram] Account #${accountId} AUTH_KEY_DUPLICATED — all ${retryDelays.length + 1} attempts failed`);
-            throw err;
-          }
-        } else {
-          throw err; // non-AUTH_KEY_DUPLICATED error — don't retry
-        }
-      }
+    // Process lock in index.ts guarantees we're the only process holding MTProto sessions.
+    // No retry loop needed — if we get AUTH_KEY_DUPLICATED here, it means the lock didn't work
+    // (e.g. /tmp is not shared between processes on this platform).
+    const session = new StringSession(sessionString);
+    const client = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
+      connectionRetries: 3,
+      retryDelay: 2000,
+      useWSS: false,
+      autoReconnect: true,
+    });
+    console.log(`[Telegram] Account #${accountId} connecting...`);
+    await client.connect();
+    // Success — save session and start listening
+    await saveSessionAndListen(accountId, client, sessionString);
+  } catch (err: any) {
+    const msg = String(err?.message ?? err ?? "");
+    if (msg.includes("AUTH_KEY_DUPLICATED")) {
+      console.error(`[Telegram] Account #${accountId} AUTH_KEY_DUPLICATED — process lock may not be working on this platform`);
     }
-
-    if (lastErr) throw lastErr;
+    throw err;
   } finally {
     connectingAccounts.delete(accountId);
   }
