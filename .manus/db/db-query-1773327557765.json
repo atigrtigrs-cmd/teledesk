@@ -1,0 +1,20 @@
+{
+  "query": "SELECT MIN(createdAt) as oldest, MAX(createdAt) as newest, COUNT(*) as total FROM messages; SELECT COUNT(*) as dialogs_with_messages FROM (SELECT dialogId FROM messages GROUP BY dialogId) t; SELECT COUNT(*) as dialogs_no_messages FROM dialogs d WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.dialogId = d.id);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT MIN(createdAt) as oldest, MAX(createdAt) as newest, COUNT(*) as total FROM messages; SELECT COUNT(*) as dialogs_with_messages FROM (SELECT dialogId FROM messages GROUP BY dialogId) t; SELECT COUNT(*) as dialogs_no_messages FROM dialogs d WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.dialogId = d.id);",
+  "rows": [
+    {
+      "oldest": "2025-07-01 02:31:34",
+      "newest": "2026-03-12 12:35:58",
+      "total": "1608"
+    }
+  ],
+  "messages": [
+    "dialogs_with_messages",
+    "6",
+    "dialogs_no_messages",
+    "1006"
+  ],
+  "stdout": "oldest\tnewest\ttotal\n2025-07-01 02:31:34\t2026-03-12 12:35:58\t1608\ndialogs_with_messages\n6\ndialogs_no_messages\n1006\n",
+  "stderr": "",
+  "execution_time_ms": 150
+}

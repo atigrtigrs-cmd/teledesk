@@ -1,0 +1,82 @@
+{
+  "query": "SELECT COUNT(*) as total_dialogs FROM dialogs; SELECT COUNT(*) as total_messages FROM messages; SELECT d.id, d.lastMessageAt, COUNT(m.id) as msg_count FROM dialogs d LEFT JOIN messages m ON m.dialogId = d.id GROUP BY d.id ORDER BY msg_count DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT COUNT(*) as total_dialogs FROM dialogs; SELECT COUNT(*) as total_messages FROM messages; SELECT d.id, d.lastMessageAt, COUNT(m.id) as msg_count FROM dialogs d LEFT JOIN messages m ON m.dialogId = d.id GROUP BY d.id ORDER BY msg_count DESC LIMIT 20;",
+  "rows": [
+    {
+      "total_dialogs": "1012"
+    },
+    {
+      "total_dialogs": "total_messages"
+    },
+    {
+      "total_dialogs": "1608"
+    },
+    {
+      "total_dialogs": "id\tlastMessageAt\tmsg_count"
+    },
+    {
+      "total_dialogs": "210002\t2026-02-24 12:51:48\t1196"
+    },
+    {
+      "total_dialogs": "210003\t2025-07-18 12:09:13\t104"
+    },
+    {
+      "total_dialogs": "210004\t2026-03-12 12:33:38\t100"
+    },
+    {
+      "total_dialogs": "210006\t2026-03-12 12:32:40\t100"
+    },
+    {
+      "total_dialogs": "210005\t2026-03-12 12:35:58\t97"
+    },
+    {
+      "total_dialogs": "210001\t2026-01-13 22:24:21\t11"
+    },
+    {
+      "total_dialogs": "210526\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210990\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210403\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210495\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210758\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210808\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210572\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210656\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210040\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210903\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210807\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210296\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210562\tNULL\t0"
+    },
+    {
+      "total_dialogs": "210497\tNULL\t0"
+    }
+  ],
+  "messages": [],
+  "stdout": "total_dialogs\n1012\ntotal_messages\n1608\nid\tlastMessageAt\tmsg_count\n210002\t2026-02-24 12:51:48\t1196\n210003\t2025-07-18 12:09:13\t104\n210004\t2026-03-12 12:33:38\t100\n210006\t2026-03-12 12:32:40\t100\n210005\t2026-03-12 12:35:58\t97\n210001\t2026-01-13 22:24:21\t11\n210526\tNULL\t0\n210990\tNULL\t0\n210403\tNULL\t0\n210495\tNULL\t0\n210758\tNULL\t0\n210808\tNULL\t0\n210572\tNULL\t0\n210656\tNULL\t0\n210040\tNULL\t0\n210903\tNULL\t0\n210807\tNULL\t0\n210296\tNULL\t0\n210562\tNULL\t0\n210497\tNULL\t0\n",
+  "stderr": "",
+  "execution_time_ms": 116
+}

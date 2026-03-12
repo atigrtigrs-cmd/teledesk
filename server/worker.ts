@@ -47,6 +47,9 @@ function getDb() {
 
 const db = getDb();
 
+// Track accounts currently being synced to avoid duplicate syncs
+const syncingAccounts = new Set<number>();
+
 // ─── Telegram config ──────────────────────────────────────────────────────────
 
 const TELEGRAM_API_ID = parseInt(process.env.TELEGRAM_API_ID ?? "36272545");
@@ -973,6 +976,37 @@ async function main(): Promise<void> {
       );
     }
   }, 5 * 60 * 1000);
+
+  // Sync watchdog: check for accounts with syncStatus='idle' or lastSyncAt=null every 2 minutes
+  // This picks up accounts reset via syncAll/syncHistory from the main server
+  setInterval(async () => {
+    const accounts = await db
+      .select()
+      .from(telegramAccounts)
+      .where(isNotNull(telegramAccounts.sessionString))
+      .catch(() => []);
+
+    for (const acc of accounts) {
+      if (!acc.sessionString) continue;
+      if (!activeClients.has(acc.id)) continue; // must be connected
+      if (syncingAccounts.has(acc.id)) continue; // already syncing
+      if (acc.syncStatus === "syncing") continue; // already syncing in DB
+
+      const needsSync = acc.syncStatus === "idle" || acc.lastSyncAt === null;
+      if (!needsSync) continue;
+
+      console.log(
+        `[Worker] Sync watchdog: triggering sync for account #${acc.id} (@${acc.username}), syncStatus=${acc.syncStatus}`
+      );
+      const client = activeClients.get(acc.id)!;
+      syncingAccounts.add(acc.id);
+      syncAccountHistory(acc.id, client, acc.telegramId ?? null)
+        .catch((err) =>
+          console.error(`[Worker] Sync watchdog error for #${acc.id}: ${err?.message ?? err}`)
+        )
+        .finally(() => syncingAccounts.delete(acc.id));
+    }
+  }, 2 * 60 * 1000);
 
   console.log("[Worker] All intervals started. Worker is running.");
 }
