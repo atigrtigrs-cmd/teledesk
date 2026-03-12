@@ -246,5 +246,5 @@
 - [x] Auto-refresh Inbox dialog list every 30 seconds
 
 ## Filter Supergroups from Sync (Mar 13)
-- [ ] Skip supergroups and channels in syncAccountHistory (only sync User dialogs + small groups)
-- [ ] Clean existing supergroup dialogs from DB
+- [x] Skip supergroups and channels in syncAccountHistory (only sync User dialogs + small groups)
+- [x] Clean existing supergroup dialogs from DB
