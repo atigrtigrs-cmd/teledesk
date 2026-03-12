@@ -650,12 +650,40 @@ async function syncAccountHistory(
   let syncedCount = 0;
 
   try {
-    const tgDialogs = await client.getDialogs({ limit: 500 });
+    // Fetch ALL dialogs using pagination (100 per batch)
+    const BATCH_SIZE = 100;
+    const allDialogs: any[] = [];
+    let offsetDate = 0;
+    let offsetId = 0;
+    let offsetPeer: any = undefined;
+
+    while (true) {
+      const batch = await client.getDialogs({
+        limit: BATCH_SIZE,
+        offsetDate,
+        offsetId,
+        offsetPeer,
+      });
+      if (!batch || batch.length === 0) break;
+      allDialogs.push(...batch);
+      console.log(`[Worker] Fetched ${allDialogs.length} dialogs so far...`);
+      if (batch.length < BATCH_SIZE) break; // last page
+      // Use last dialog as offset for next page
+      const last = batch[batch.length - 1] as any;
+      offsetDate = last.date ?? 0;
+      offsetId = last.message?.id ?? 0;
+      offsetPeer = last.inputEntity ?? undefined;
+      // Small delay to avoid flood limits
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    console.log(`[Worker] Total dialogs fetched: ${allDialogs.length}`);
+
     const gapFillFromTs = lastSyncAt
       ? Math.floor(lastSyncAt.getTime() / 1000)
       : 0;
 
-    for (const tgDialog of tgDialogs) {
+    for (const tgDialog of allDialogs) {
       try {
         const entity = tgDialog.entity as any;
         if (!entity) continue;
