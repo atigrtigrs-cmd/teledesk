@@ -152,7 +152,7 @@ export const appRouter = router({
         syncStatus: telegramAccounts.syncStatus,
         syncedDialogs: telegramAccounts.syncedDialogs,
         lastSyncAt: telegramAccounts.lastSyncAt,
-        hasSession: sql<boolean>`session_string IS NOT NULL AND session_string != ''`,
+        hasSession: sql<number>`CASE WHEN session_string IS NOT NULL AND session_string != '' THEN 1 ELSE 0 END`,
       }).from(telegramAccounts);
       return {
         activeClientIds: activeIds,
@@ -161,6 +161,8 @@ export const appRouter = router({
           isActiveInMemory: activeIds.includes(a.id),
         })),
         timestamp: new Date().toISOString(),
+        nodeEnv: process.env.NODE_ENV,
+        uptime: process.uptime(),
       };
     }),
 
@@ -243,23 +245,19 @@ export const appRouter = router({
 
     syncAll: protectedProcedure
       .mutation(async () => {
-        // Force sync ALL accounts: connect if needed, then sync all dialogs
-        // This runs synchronously and returns the result with full error details
-        try {
-          const result = await forceSyncAll();
-          const accountSummary = result.accounts
-            .map(a => `@${a.username ?? a.id}: ${a.dialogs} диалогов${a.error ? ` (ошибка: ${a.error.substring(0, 80)})` : ""}`)
-            .join("\n");
-          return {
-            success: result.errors === 0,
-            message: `Синхронизировано ${result.synced} диалогов по ${result.accounts.length} аккаунтам`,
-            details: accountSummary,
-            synced: result.synced,
-            errors: result.errors,
-          };
-        } catch (err: any) {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
-        }
+        // Force sync ALL accounts: connect if needed, then sync all dialogs.
+        // Runs in background — returns immediately so the HTTP request doesn't timeout.
+        // Results are pushed to the browser via SSE (sync_complete event).
+        forceSyncAll().catch(err =>
+          console.error("[syncAll] Background sync failed:", err)
+        );
+        return {
+          success: true,
+          message: "Синхронизация запущена. Результат появится через несколько минут...",
+          details: "",
+          synced: 0,
+          errors: 0,
+        };
       }),
 
     assignManager: protectedProcedure

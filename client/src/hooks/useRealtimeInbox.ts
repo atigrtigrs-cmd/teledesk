@@ -11,11 +11,15 @@ import { trpc } from "@/lib/trpc";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected";
 
-export function useRealtimeInbox(dialogId?: number) {
+type SyncCompleteCallback = (result: { totalSynced: number; totalErrors: number; accounts: { id: number; username: string | null; dialogs: number; error?: string }[] }) => void;
+
+export function useRealtimeInbox(dialogId?: number, onSyncComplete?: SyncCompleteCallback) {
   const utils = trpc.useUtils();
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSyncCompleteRef = useRef(onSyncComplete);
+  onSyncCompleteRef.current = onSyncComplete;
 
   useEffect(() => {
     let destroyed = false;
@@ -53,6 +57,18 @@ export function useRealtimeInbox(dialogId?: number) {
             if (dialogId !== undefined && data.dialogId === dialogId) {
               utils.messages.list.invalidate({ dialogId });
               utils.dialogs.get.invalidate({ id: dialogId });
+            }
+          } else if (data.type === "sync_complete") {
+            // Sync finished — refresh all data
+            utils.dialogs.list.invalidate();
+            utils.accounts.list.invalidate();
+            const syncData = data as any;
+            if (onSyncCompleteRef.current) {
+              onSyncCompleteRef.current({
+                totalSynced: syncData.totalSynced ?? 0,
+                totalErrors: syncData.totalErrors ?? 0,
+                accounts: syncData.accounts ?? [],
+              });
             }
           }
         } catch {

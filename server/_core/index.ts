@@ -8,7 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { sseHandler } from "../sse";
-import { restoreAllSessions, keepAliveAll } from "../telegram";
+import { restoreAllSessions, keepAliveAll, getActiveAccountIds } from "../telegram";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -39,6 +39,18 @@ async function startServer() {
   // SSE real-time events endpoint
   app.get("/api/events", sseHandler);
 
+  // Debug endpoint: check activeClients state without auth
+  app.get("/api/debug/tg-status", (_req, res) => {
+    const ids = getActiveAccountIds();
+    res.json({
+      activeClientIds: ids,
+      count: ids.length,
+      uptime: process.uptime(),
+      nodeEnv: process.env.NODE_ENV,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",
@@ -66,16 +78,15 @@ async function startServer() {
     // Restore all active Telegram sessions after server is up
     // Skip in development to avoid AUTH_KEY_DUPLICATED conflicts with Render production
     if (process.env.NODE_ENV !== "development") {
-      // Wait 60 seconds before connecting Telegram sessions.
-      // Render keeps the old process alive for ~30-60s during deploys.
-      // If we connect immediately, both old+new processes try to use the same session
-      // which causes AUTH_KEY_DUPLICATED. Waiting ensures the old process is dead.
-      console.log("[Startup] Waiting 60s before restoring Telegram sessions (Render deploy grace period)...");
+      // Wait 30 seconds before starting the first connection attempt.
+      // connectAccount() now handles AUTH_KEY_DUPLICATED internally with retries (30s, 60s, 90s).
+      // The 30s initial delay is just to let the HTTP server fully initialize.
+      console.log("[Startup] Waiting 30s before restoring Telegram sessions...");
       setTimeout(() => {
         restoreAllSessions().catch(err =>
           console.error("[Startup] Failed to restore Telegram sessions:", err)
         );
-      }, 60000);
+      }, 30000);
 
       // Keep-alive ping: every 3 minutes, send a lightweight getMe() to each active client
       // This prevents Render's idle connection timeout from dropping MTProto sessions
@@ -87,7 +98,7 @@ async function startServer() {
         }
       }, 3 * 60 * 1000);
 
-      // Auto-reconnect watchdog: every 10 minutes, reconnect any disconnected accounts
+      // Auto-reconnect watchdog: every 5 minutes, reconnect any disconnected accounts
       // Uses mutex so it won't run if restoreAllSessions is already running
       setInterval(async () => {
         try {
@@ -96,7 +107,7 @@ async function startServer() {
         } catch (err) {
           console.error("[Watchdog] Auto-reconnect failed:", err);
         }
-      }, 10 * 60 * 1000);
+      }, 5 * 60 * 1000);
     } else {
       console.log("[Startup] Skipping Telegram session restore in development mode");
     }

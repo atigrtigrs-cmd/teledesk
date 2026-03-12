@@ -15,6 +15,8 @@ import type { Request, Response } from "express";
 export type InboxEvent =
   | { type: "new_message"; dialogId: number; accountId: number }
   | { type: "new_dialog"; dialogId: number; accountId: number }
+  | { type: "sync_progress"; accountId: number; username: string | null; status: "connecting" | "syncing" | "done" | "error"; dialogs?: number; error?: string }
+  | { type: "sync_complete"; totalSynced: number; totalErrors: number; accounts: { id: number; username: string | null; dialogs: number; error?: string }[] }
   | { type: "ping" };
 
 // ─── Connected clients registry ───────────────────────────────────────────────

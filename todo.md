@@ -226,6 +226,13 @@
 - [x] Verify sync actually works after deploy (deployed, live on Render)
 
 ## Fix AUTH_KEY_DUPLICATED (Mar 12)
-- [ ] Understand why AUTH_KEY_DUPLICATED happens on every connect attempt on Render
-- [ ] Fix connection logic so accounts actually connect and sync dialogs
+- [x] Understand why AUTH_KEY_DUPLICATED happens on every connect attempt on Render
+- [x] Fix connectAccount: retry with 30s/60s/90s backoff instead of failing immediately
+- [x] Add detailed logging to restoreAllSessions (shows uptime, accounts found, success/fail per account)
+- [x] Reduce startup grace period to 30s (connectAccount handles retries internally now)
+- [x] Reduce watchdog to 5 min interval
+- [x] Add /api/debug/tg-status HTTP endpoint (no auth required) to check activeClients on Render
+- [x] Make syncAll async (background) - returns immediately, result comes via SSE sync_complete event
+- [x] Add SSE sync_progress events for real-time feedback during sync
+- [x] Update Inbox.tsx to show toast when SSE sync_complete arrives
 - [ ] Verify sync returns non-zero dialog count after deploy

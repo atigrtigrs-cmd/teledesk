@@ -132,7 +132,20 @@ export default function Inbox() {
   const [bulkMode, setBulkMode] = useState(false);
 
   // SSE real-time connection — no polling needed
-  const { connectionState } = useRealtimeInbox();
+  const { connectionState } = useRealtimeInbox(undefined, (result) => {
+    // Called when background sync completes via SSE
+    const accountSummary = result.accounts
+      .map(a => `@${a.username ?? a.id}: ${a.dialogs} диалогов${a.error ? ` (ошибка: ${a.error.substring(0, 80)})` : ""}`)
+      .join("\n");
+    const message = `Синхронизировано ${result.totalSynced} диалогов по ${result.accounts.length} аккаунтам`;
+    if (result.totalErrors > 0 && result.totalSynced === 0) {
+      toast.error(message, { description: accountSummary || undefined, duration: 10000 });
+    } else if (result.totalErrors > 0) {
+      toast.warning(message, { description: accountSummary || undefined, duration: 8000 });
+    } else {
+      toast.success(message, { description: accountSummary || undefined, duration: 6000 });
+    }
+  });
   const { data: allTags } = trpc.tags.list.useQuery();
   const { data: allAccounts } = trpc.accounts.list.useQuery();
   const { data: allUsers } = trpc.users.list.useQuery();
@@ -148,31 +161,13 @@ export default function Inbox() {
     telegramAccountId: selectedAccountId,
   });
 
-  // Sync all accounts mutation
+  // Sync all accounts mutation (async — runs in background, result via SSE)
   const syncAll = trpc.accounts.syncAll.useMutation({
     onSuccess: (res) => {
-      if (res.errors > 0 && res.synced === 0) {
-        // All accounts failed — show as error with details
-        toast.error(res.message, {
-          description: res.details || undefined,
-          duration: 10000,
-        });
-      } else if (res.errors > 0) {
-        // Partial success
-        toast.warning(res.message, {
-          description: res.details || undefined,
-          duration: 8000,
-        });
-      } else {
-        toast.success(res.message, {
-          description: res.details || undefined,
-          duration: 6000,
-        });
-      }
-      utils.dialogs.list.invalidate();
-      utils.accounts.list.invalidate();
+      // Just show that sync was started — actual result comes via SSE sync_complete event
+      toast.info(res.message, { duration: 5000 });
     },
-    onError: (err) => toast.error(`Ошибка синхронизации: ${err.message}`),
+    onError: (err) => toast.error(`Ошибка запуска синхронизации: ${err.message}`),
   });
 
   // Bulk mutations
