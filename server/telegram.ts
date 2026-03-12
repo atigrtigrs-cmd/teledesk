@@ -182,6 +182,30 @@ export async function disconnectAccount(accountId: number): Promise<void> {
   }
 }
 
+/**
+ * Gracefully disconnect ALL active MTProto clients.
+ * Call this on SIGTERM so Telegram releases sessions immediately.
+ */
+export async function disconnectAll(): Promise<void> {
+  const ids = Array.from(activeClients.keys());
+  console.log(`[Telegram] disconnectAll: disconnecting ${ids.length} clients...`);
+  await Promise.allSettled(
+    ids.map(async (id) => {
+      try {
+        const client = activeClients.get(id);
+        if (client) {
+          await client.disconnect();
+          activeClients.delete(id);
+          console.log(`[Telegram] disconnectAll: account #${id} disconnected`);
+        }
+      } catch (err) {
+        console.error(`[Telegram] disconnectAll: error disconnecting account #${id}:`, err);
+      }
+    })
+  );
+  console.log(`[Telegram] disconnectAll: done`);
+}
+
 // ─── Save session and start message listener ─────────────────────────────────
 
 async function saveSessionAndListen(

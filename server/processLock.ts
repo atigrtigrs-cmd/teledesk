@@ -14,6 +14,7 @@
 
 import fs from "fs";
 import path from "path";
+import { disconnectAll } from "./telegram";
 
 const LOCK_FILE = "/tmp/teledesk-tg.lock";
 const MY_PID = process.pid;
@@ -106,7 +107,25 @@ export function releaseProcessLock(): void {
   }
 }
 
-// Auto-release on process exit
+// Auto-release on process exit — also disconnect all MTProto clients so Telegram releases sessions
 process.on("exit", releaseProcessLock);
-process.on("SIGTERM", () => { releaseProcessLock(); process.exit(0); });
-process.on("SIGINT", () => { releaseProcessLock(); process.exit(0); });
+process.on("SIGTERM", async () => {
+  console.log("[ProcessLock] SIGTERM received — disconnecting all Telegram clients before exit...");
+  try {
+    await disconnectAll();
+  } catch (err) {
+    console.error("[ProcessLock] Error during disconnectAll on SIGTERM:", err);
+  }
+  releaseProcessLock();
+  process.exit(0);
+});
+process.on("SIGINT", async () => {
+  console.log("[ProcessLock] SIGINT received — disconnecting all Telegram clients before exit...");
+  try {
+    await disconnectAll();
+  } catch (err) {
+    console.error("[ProcessLock] Error during disconnectAll on SIGINT:", err);
+  }
+  releaseProcessLock();
+  process.exit(0);
+});

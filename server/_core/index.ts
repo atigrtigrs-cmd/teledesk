@@ -8,8 +8,6 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { sseHandler } from "../sse";
-import { restoreAllSessions, keepAliveAll, getActiveAccountIds } from "../telegram";
-import { acquireProcessLock, waitForProcessLock } from "../processLock";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -40,18 +38,6 @@ async function startServer() {
   // SSE real-time events endpoint
   app.get("/api/events", sseHandler);
 
-  // Debug endpoint: check activeClients state without auth
-  app.get("/api/debug/tg-status", (_req, res) => {
-    const ids = getActiveAccountIds();
-    res.json({
-      activeClientIds: ids,
-      count: ids.length,
-      uptime: process.uptime(),
-      nodeEnv: process.env.NODE_ENV,
-      timestamp: new Date().toISOString(),
-    });
-  });
-
   // tRPC API
   app.use(
     "/api/trpc",
@@ -76,49 +62,7 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
-    // Restore all active Telegram sessions after server is up
-    // Skip in development to avoid AUTH_KEY_DUPLICATED conflicts with Render production
-    if (process.env.NODE_ENV !== "development") {
-      // Acquire process lock immediately so other processes can detect us
-      acquireProcessLock();
-
-      // Wait for any previous process to fully die before connecting MTProto sessions.
-      // Render zero-downtime deploys keep old process alive for ~60-120s.
-      // We wait up to 3 minutes for the old process to die.
-      console.log("[Startup] Waiting for process lock before restoring Telegram sessions...");
-      waitForProcessLock(3 * 60 * 1000).then(async () => {
-        // Wait 20 extra seconds after lock is acquired to let Telegram server
-        // release old sessions (Telegram keeps sessions alive ~10-15s after disconnect)
-        console.log("[Startup] Lock acquired — waiting 20s for Telegram server to release old sessions...");
-        await new Promise(r => setTimeout(r, 20000));
-        return restoreAllSessions();
-      }).catch(err =>
-        console.error("[Startup] Failed to restore Telegram sessions:", err)
-      );
-
-      // Keep-alive ping: every 3 minutes, send a lightweight getMe() to each active client
-      // This prevents Render's idle connection timeout from dropping MTProto sessions
-      setInterval(async () => {
-        try {
-          await keepAliveAll();
-        } catch (err) {
-          console.error("[KeepAlive] Ping failed:", err);
-        }
-      }, 3 * 60 * 1000);
-
-      // Auto-reconnect watchdog: every 5 minutes, reconnect any disconnected accounts
-      // Uses mutex so it won't run if restoreAllSessions is already running
-      setInterval(async () => {
-        try {
-          console.log("[Watchdog] Checking Telegram account connections...");
-          await restoreAllSessions();
-        } catch (err) {
-          console.error("[Watchdog] Auto-reconnect failed:", err);
-        }
-      }, 5 * 60 * 1000);
-    } else {
-      console.log("[Startup] Skipping Telegram session restore in development mode");
-    }
+    console.log("[Startup] Main server started. Telegram sync is handled by the Worker process.");
   });
 }
 

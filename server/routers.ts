@@ -20,7 +20,7 @@ import { eq, desc, and, sql, gte, count, countDistinct, inArray } from "drizzle-
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
-import { startQRLogin, disconnectAccount, sendTelegramMessage, getActiveAccountIds, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, connectAccount, syncAccountHistory, restoreAllSessions, forceSyncAll } from "./telegram";
+import { startQRLogin, disconnectAccount, sendTelegramMessage, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, connectAccount } from "./telegram";
 import { ENV } from "./_core/env";
 
 const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
@@ -137,14 +137,19 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    activeIds: protectedProcedure.query(() => {
-      return getActiveAccountIds();
+    activeIds: protectedProcedure.query(async () => {
+      // Worker manages connections — read active status from DB
+      const db = await getDb();
+      if (!db) return [];
+      const accs = await db.select({ id: telegramAccounts.id })
+        .from(telegramAccounts)
+        .where(eq(telegramAccounts.status, "active"));
+      return accs.map(a => a.id);
     }),
 
     debugStatus: publicProcedure.query(async () => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const activeIds = getActiveAccountIds();
       const accs = await db.select({
         id: telegramAccounts.id,
         username: telegramAccounts.username,
@@ -154,11 +159,12 @@ export const appRouter = router({
         lastSyncAt: telegramAccounts.lastSyncAt,
         hasSession: sql<number>`CASE WHEN session_string IS NOT NULL AND session_string != '' THEN 1 ELSE 0 END`,
       }).from(telegramAccounts);
+      const activeIds = accs.filter(a => a.status === "active").map(a => a.id);
       return {
         activeClientIds: activeIds,
         accounts: accs.map(a => ({
           ...a,
-          isActiveInMemory: activeIds.includes(a.id),
+          isActiveInMemory: a.status === "active",
         })),
         timestamp: new Date().toISOString(),
         nodeEnv: process.env.NODE_ENV,
@@ -227,33 +233,31 @@ export const appRouter = router({
     syncHistory: protectedProcedure
       .input(z.object({ accountId: z.number() }))
       .mutation(async ({ input }) => {
-        // Run sync in background, return immediately
-        syncAccountHistory(input.accountId).catch(err =>
-          console.error(`[Sync] Manual sync failed for account #${input.accountId}:`, err)
-        );
-        return { success: true, message: "Синхронизация запущена" };
+        // Worker handles sync automatically — just reset syncStatus to trigger re-sync
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(telegramAccounts)
+          .set({ syncStatus: "idle", lastSyncAt: null })
+          .where(eq(telegramAccounts.id, input.accountId));
+        return { success: true, message: "Синхронизация будет запущена Worker-ом" };
       }),
 
     reconnectAll: protectedProcedure
       .mutation(async () => {
-        // Trigger restoreAllSessions in background — reconnects all accounts with a session string
-        restoreAllSessions().catch(err =>
-          console.error("[reconnectAll] Failed:", err)
-        );
-        return { success: true, message: "Переподключение запущено" };
+        // Worker handles reconnection automatically via watchdog
+        return { success: true, message: "Worker автоматически переподключит аккаунты" };
       }),
 
     syncAll: protectedProcedure
       .mutation(async () => {
-        // Force sync ALL accounts: connect if needed, then sync all dialogs.
-        // Runs in background — returns immediately so the HTTP request doesn't timeout.
-        // Results are pushed to the browser via SSE (sync_complete event).
-        forceSyncAll().catch(err =>
-          console.error("[syncAll] Background sync failed:", err)
-        );
+        // Reset syncStatus for all accounts — Worker will pick them up and sync
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db.update(telegramAccounts)
+          .set({ syncStatus: "idle", lastSyncAt: null });
         return {
           success: true,
-          message: "Синхронизация запущена. Результат появится через несколько минут...",
+          message: "Синхронизация запущена. Worker обновит все диалоги...",
           details: "",
           synced: 0,
           errors: 0,

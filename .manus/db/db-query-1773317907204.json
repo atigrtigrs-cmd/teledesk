@@ -1,0 +1,38 @@
+{
+  "query": "SELECT id, username, status, syncStatus, sessionString IS NULL as sessionCleared FROM telegram_accounts ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, username, status, syncStatus, sessionString IS NULL as sessionCleared FROM telegram_accounts ORDER BY id;",
+  "rows": [
+    {
+      "id": "120002",
+      "username": "lilkek_support",
+      "status": "disconnected",
+      "syncStatus": "idle",
+      "sessionCleared": "1"
+    },
+    {
+      "id": "150001",
+      "username": "affiliate_LeadCash",
+      "status": "disconnected",
+      "syncStatus": "idle",
+      "sessionCleared": "1"
+    },
+    {
+      "id": "150002",
+      "username": "LeadCash_Affiliate",
+      "status": "disconnected",
+      "syncStatus": "idle",
+      "sessionCleared": "1"
+    },
+    {
+      "id": "150004",
+      "username": "LeadCash_manager",
+      "status": "disconnected",
+      "syncStatus": "idle",
+      "sessionCleared": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tstatus\tsyncStatus\tsessionCleared\n120002\tlilkek_support\tdisconnected\tidle\t1\n150001\taffiliate_LeadCash\tdisconnected\tidle\t1\n150002\tLeadCash_Affiliate\tdisconnected\tidle\t1\n150004\tLeadCash_manager\tdisconnected\tidle\t1\n",
+  "stderr": "",
+  "execution_time_ms": 52
+}

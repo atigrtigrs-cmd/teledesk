@@ -238,3 +238,7 @@
 - [x] Implement process lock (processLock.ts) — new process waits for old to die before connecting MTProto
 - [x] Simplify connectAccount — remove retry backoff (lock guarantees single process)
 - [ ] Verify sync returns non-zero dialog count after deploy
+
+## Fix Sender Attribution in Chat (Mar 12)
+- [ ] Fix sender attribution in chat view — show who sent each message (account owner vs contact vs other group member)
+- [ ] Ensure senderName is saved correctly during sync and real-time message handling

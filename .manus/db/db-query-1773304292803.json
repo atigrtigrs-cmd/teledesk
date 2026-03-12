@@ -1,0 +1,46 @@
+{
+  "query": "SELECT id, username, status, syncStatus, telegramId, LENGTH(sessionString) as sessionLen, lastSyncAt FROM telegram_accounts ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, username, status, syncStatus, telegramId, LENGTH(sessionString) as sessionLen, lastSyncAt FROM telegram_accounts ORDER BY id;",
+  "rows": [
+    {
+      "id": "120002",
+      "username": "lilkek_support",
+      "status": "disconnected",
+      "syncStatus": "done",
+      "telegramId": "8388697379",
+      "sessionLen": "369",
+      "lastSyncAt": "2026-03-10 09:29:26"
+    },
+    {
+      "id": "150001",
+      "username": "affiliate_LeadCash",
+      "status": "active",
+      "syncStatus": "done",
+      "telegramId": "7480546401",
+      "sessionLen": "369",
+      "lastSyncAt": "2026-03-10 09:22:59"
+    },
+    {
+      "id": "150002",
+      "username": "LeadCash_Affiliate",
+      "status": "active",
+      "syncStatus": "done",
+      "telegramId": "5547473306",
+      "sessionLen": "369",
+      "lastSyncAt": "2026-03-10 09:22:54"
+    },
+    {
+      "id": "150004",
+      "username": "LeadCash_manager",
+      "status": "active",
+      "syncStatus": "done",
+      "telegramId": "7966871800",
+      "sessionLen": "369",
+      "lastSyncAt": "2026-03-10 09:27:01"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tstatus\tsyncStatus\ttelegramId\tsessionLen\tlastSyncAt\n120002\tlilkek_support\tdisconnected\tdone\t8388697379\t369\t2026-03-10 09:29:26\n150001\taffiliate_LeadCash\tactive\tdone\t7480546401\t369\t2026-03-10 09:22:59\n150002\tLeadCash_Affiliate\tactive\tdone\t5547473306\t369\t2026-03-10 09:22:54\n150004\tLeadCash_manager\tactive\tdone\t7966871800\t369\t2026-03-10 09:27:01\n",
+  "stderr": "",
+  "execution_time_ms": 105
+}

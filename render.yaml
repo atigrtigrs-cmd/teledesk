@@ -1,4 +1,5 @@
 services:
+  # Main web server (API + UI)
   - type: web
     name: teledesk
     env: node
@@ -11,3 +12,16 @@ services:
         value: production
       - key: JWT_SECRET
         generateValue: true
+
+  # Telegram Sync Worker (persistent MTProto connections)
+  # This service does NOT restart on web server deploys — no AUTH_KEY_DUPLICATED!
+  - type: worker
+    name: leadcash-tg-worker
+    env: node
+    region: frankfurt
+    plan: free
+    buildCommand: pnpm install && pnpm build
+    startCommand: node dist/worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
