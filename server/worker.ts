@@ -1,19 +1,8 @@
 /**
  * LeadCash Connect — Telegram Sync Worker
  *
- * This is a STANDALONE process that runs separately from the main Express server.
- * It holds all MTProto connections permanently and writes messages to the shared DB.
- *
- * WHY SEPARATE?
- * The main server restarts on every Render deploy. During zero-downtime deploys,
- * two instances of the main server run simultaneously — causing AUTH_KEY_DUPLICATED
- * because both try to connect the same Telegram sessions.
- *
- * This worker is deployed as a Render "Background Worker" which:
- * 1. Does NOT restart on main server deploys
- * 2. Holds MTProto connections permanently (no AUTH_KEY_DUPLICATED)
- * 3. Writes all incoming/outgoing messages to the shared MySQL DB
- * 4. Main server reads from DB — no MTProto needed there
+ * Runs inside the main Express server process (same IP = no AUTH_KEY_DUPLICATED).
+ * Holds all MTProto connections, syncs history, handles real-time messages.
  *
  * COMMUNICATION WITH MAIN SERVER:
  * - Worker writes to DB → main server reads from DB
@@ -28,7 +17,7 @@ import { StringSession } from "telegram/sessions/index.js";
 import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { drizzle } from "drizzle-orm/mysql2";
-import { eq, and, desc, isNotNull } from "drizzle-orm";
+import { eq, and, desc, isNotNull, sql } from "drizzle-orm";
 import {
   telegramAccounts,
   dialogs,
@@ -86,7 +75,6 @@ async function connectAccount(
       retryDelay: 3000,
       useWSS: true,
       autoReconnect: true,
-      // Device info to appear as a desktop app
       deviceModel: "LeadCash Connect Worker",
       appVersion: "1.0",
       langCode: "ru",
@@ -111,6 +99,7 @@ async function connectAccount(
           firstName: meUser.firstName ?? null,
           lastName: meUser.lastName ?? null,
           phone: meUser.phone ?? null,
+          lastError: null,
         })
         .where(eq(telegramAccounts.id, accountId));
       console.log(
@@ -167,8 +156,29 @@ async function connectAccount(
         .set({ status: "disconnected" })
         .where(eq(telegramAccounts.id, accountId));
     }
-    // AUTH_KEY_DUPLICATED: another worker instance is running — don't mark as disconnected
-    // The other instance will handle it
+
+    // FIX #1 (AUTH_KEY_DUPLICATED): old server instance still running — wait and retry.
+    // Don't mark as disconnected — just schedule a retry after old instance dies.
+    if (msg.includes("AUTH_KEY_DUPLICATED")) {
+      console.log(`[Worker] AUTH_KEY_DUPLICATED for account #${accountId} — old instance still alive. Will retry in 120s...`);
+      setTimeout(async () => {
+        if (!activeClients.has(accountId) && !connectingAccounts.has(accountId)) {
+          console.log(`[Worker] Retrying connection for account #${accountId} after AUTH_KEY_DUPLICATED delay...`);
+          const [acc] = await db
+            .select()
+            .from(telegramAccounts)
+            .where(eq(telegramAccounts.id, accountId))
+            .limit(1)
+            .catch(() => [null as any]);
+          if (acc?.sessionString) {
+            connectAccount(accountId, acc.sessionString).catch((e) =>
+              console.error(`[Worker] Retry connect failed for #${accountId}: ${e?.message ?? e}`)
+            );
+          }
+        }
+      }, 120 * 1000);
+    }
+
     throw err;
   } finally {
     connectingAccounts.delete(accountId);
@@ -195,7 +205,6 @@ async function shutdown(): Promise<void> {
   );
   const ids = Array.from(activeClients.keys());
   await Promise.allSettled(ids.map((id) => disconnectAccount(id)));
-  // Mark all as disconnected in DB so main server knows
   if (ids.length > 0) {
     for (const id of ids) {
       try {
@@ -309,15 +318,30 @@ async function keepAliveAll(): Promise<void> {
         .set({ status: "disconnected" })
         .where(eq(telegramAccounts.id, accountId));
 
-      // Try to reconnect
+      // FIX #6: don't reconnect banned/revoked accounts; add delay to avoid tight loop
+      if (
+        errMsg.includes("SESSION_REVOKED") ||
+        errMsg.includes("AUTH_KEY_INVALID") ||
+        errMsg.includes("USER_DEACTIVATED") ||
+        errMsg.includes("USER_BANNED")
+      ) {
+        console.warn(`[Worker] Account #${accountId} is permanently disconnected (${errMsg}), skipping reconnect`);
+        continue;
+      }
+
+      // Try to reconnect after a short delay
       const [acc] = await db
         .select()
         .from(telegramAccounts)
         .where(eq(telegramAccounts.id, accountId))
         .limit(1);
       if (acc?.sessionString) {
-        console.log(`[Worker] Attempting reconnect for account #${accountId}...`);
-        connectAccount(accountId, acc.sessionString).catch(() => {});
+        console.log(`[Worker] Scheduling reconnect for account #${accountId} in 30s...`);
+        setTimeout(() => {
+          if (!activeClients.has(accountId) && !connectingAccounts.has(accountId)) {
+            connectAccount(accountId, acc.sessionString!).catch(() => {});
+          }
+        }, 30 * 1000);
       }
     }
   }
@@ -362,6 +386,8 @@ async function handleIncomingMessage(
 
     const text = (msg as any).message ?? "";
     const tgMsgId = String((msg as any).id);
+    // FIX #5: use actual message timestamp, not new Date()
+    const msgDate = new Date(Number((msg as any).date) * 1000);
 
     // Get sender entity for name/username
     let sender: any = null;
@@ -418,13 +444,14 @@ async function handleIncomingMessage(
 
     if (existingDialogs.length > 0) {
       dialogId = existingDialogs[0].id;
+      // FIX #3: use SQL atomic increment to avoid race condition on unreadCount
       await db
         .update(dialogs)
         .set({
           status: "open",
           lastMessageText: text.substring(0, 255),
-          lastMessageAt: new Date(),
-          unreadCount: existingDialogs[0].unreadCount + 1,
+          lastMessageAt: msgDate,
+          unreadCount: sql`${dialogs.unreadCount} + 1`,
         })
         .where(eq(dialogs.id, dialogId));
     } else {
@@ -433,7 +460,7 @@ async function handleIncomingMessage(
         contactId: contactId,
         status: "open",
         lastMessageText: text.substring(0, 255),
-        lastMessageAt: new Date(),
+        lastMessageAt: msgDate,
         unreadCount: 1,
       });
       dialogId = Number(
@@ -481,7 +508,7 @@ async function handleIncomingMessage(
       text: text || null,
       telegramMessageId: tgMsgId,
       senderName,
-      createdAt: new Date(Number((msg as any).date) * 1000),
+      createdAt: msgDate,
     });
 
     console.log(
@@ -513,6 +540,7 @@ async function handleOutgoingMessage(
 
     const text = (msg as any).message ?? "";
     const tgMsgId = String((msg as any).id);
+    const msgDate = new Date(Number((msg as any).date) * 1000);
 
     // Find or create contact
     let existingContacts = await db
@@ -567,7 +595,7 @@ async function handleOutgoingMessage(
         contactId: contact.id,
         status: "open",
         lastMessageText: text.substring(0, 255),
-        lastMessageAt: new Date(Number((msg as any).date) * 1000),
+        lastMessageAt: msgDate,
         unreadCount: 0,
       });
       dialogId = Number((inserted as any)[0]?.insertId ?? 0);
@@ -605,14 +633,16 @@ async function handleOutgoingMessage(
       text: text || null,
       telegramMessageId: tgMsgId,
       senderName,
-      createdAt: new Date(Number((msg as any).date) * 1000),
+      createdAt: msgDate,
     });
 
     await db
       .update(dialogs)
       .set({
         lastMessageText: text.substring(0, 255),
-        lastMessageAt: new Date(Number((msg as any).date) * 1000),
+        lastMessageAt: msgDate,
+        // FIX #8: reset unreadCount to 0 when we send a message (we've "read" the dialog)
+        unreadCount: 0,
       })
       .where(eq(dialogs.id, dialogId));
 
@@ -650,7 +680,12 @@ async function syncAccountHistory(
   let syncedCount = 0;
 
   try {
-    // Fetch ALL dialogs using pagination (100 per batch)
+    // FIX #1 (Pagination): gramjs getDialogs returns a DialogsIter-like array.
+    // The correct way to paginate is to call getDialogs with offsetDate/offsetId/offsetPeer
+    // from the LAST dialog of the previous batch. gramjs internally handles this via
+    // the dialogs iterator, but when using direct getDialogs() calls we must pass
+    // the correct offset. The key fix: use last.dialog.date (not last.date) and
+    // last.message.id (not last.message?.id) for the offset.
     const BATCH_SIZE = 100;
     const allDialogs: any[] = [];
     let offsetDate = 0;
@@ -668,11 +703,16 @@ async function syncAccountHistory(
       allDialogs.push(...batch);
       console.log(`[Worker] Fetched ${allDialogs.length} dialogs so far...`);
       if (batch.length < BATCH_SIZE) break; // last page
-      // Use last dialog as offset for next page
+
+      // FIX #1: correct offset extraction for gramjs pagination
       const last = batch[batch.length - 1] as any;
-      offsetDate = last.date ?? 0;
-      offsetId = last.message?.id ?? 0;
+      // dialog.date is the timestamp of the last message in the dialog
+      offsetDate = last.dialog?.date ?? last.date ?? 0;
+      // message.id is the ID of the last message
+      offsetId = last.message?.id ?? last.dialog?.topMessage ?? 0;
+      // inputEntity is the peer for the offset
       offsetPeer = last.inputEntity ?? undefined;
+
       // Small delay to avoid flood limits
       await new Promise((r) => setTimeout(r, 500));
     }
@@ -682,6 +722,16 @@ async function syncAccountHistory(
     const gapFillFromTs = lastSyncAt
       ? Math.floor(lastSyncAt.getTime() / 1000)
       : 0;
+
+    // FIX #4: cache account info outside the per-dialog loop to avoid N DB queries
+    const [myAccInfo] = await db
+      .select()
+      .from(telegramAccounts)
+      .where(eq(telegramAccounts.id, accountId))
+      .limit(1);
+    const myDisplayName = myAccInfo?.firstName
+      ? `${myAccInfo.firstName}${myAccInfo.lastName ? " " + myAccInfo.lastName : ""}`.trim()
+      : myAccInfo?.username ?? null;
 
     for (const tgDialog of allDialogs) {
       try {
@@ -721,8 +771,7 @@ async function syncAccountHistory(
           await db
             .update(contacts)
             .set({
-              username:
-                entity.username ?? existingContacts[0].username,
+              username: entity.username ?? existingContacts[0].username,
               firstName:
                 entity.firstName ??
                 entity.title ??
@@ -773,7 +822,7 @@ async function syncAccountHistory(
         }
 
         // Fetch messages
-        let offsetId = 0;
+        let msgOffsetId = 0;
         let hasMore = true;
         let lastMsgText: string | null = null;
         let lastMsgAt: Date | null = null;
@@ -781,22 +830,27 @@ async function syncAccountHistory(
         while (hasMore) {
           const batch = await client.getMessages(entity, {
             limit: 100,
-            offsetId,
+            offsetId: msgOffsetId,
           });
 
           if (!batch || batch.length === 0) break;
 
-          let hitOldMessage = false;
+          // FIX #2: track whether we should stop AFTER processing the batch,
+          // not mid-batch (so we still update offsetId correctly)
+          let shouldStopAfterBatch = false;
+          let lastProcessedId = 0;
 
           for (const msg of batch) {
             const msgAny = msg as any;
             if (!msgAny.id) continue;
 
             const msgDateTs = Number(msgAny.date ?? 0);
+            lastProcessedId = msgAny.id;
 
+            // FIX #2: if message is older than gap-fill cutoff, mark to stop after batch
             if (gapFillFromTs > 0 && msgDateTs < gapFillFromTs) {
-              hitOldMessage = true;
-              continue;
+              shouldStopAfterBatch = true;
+              continue; // still process remaining messages in this batch that might be newer
             }
 
             const tgMsgId = String(msgAny.id);
@@ -826,20 +880,8 @@ async function syncAccountHistory(
               .limit(1);
             if (existing.length > 0) continue;
 
-            // Determine senderName
-            let senderName: string | null = null;
-            if (isOutgoing) {
-              const [accInfo] = await db
-                .select()
-                .from(telegramAccounts)
-                .where(eq(telegramAccounts.id, accountId))
-                .limit(1);
-              senderName = accInfo?.firstName
-                ? `${accInfo.firstName}${accInfo.lastName ? " " + accInfo.lastName : ""}`.trim()
-                : accInfo?.username ?? null;
-            } else {
-              senderName = contactName;
-            }
+            // FIX #4: use cached account name instead of querying DB per message
+            const senderName = isOutgoing ? myDisplayName : contactName;
 
             await db.insert(messages).values({
               dialogId,
@@ -856,16 +898,17 @@ async function syncAccountHistory(
             }
           }
 
-          if (hitOldMessage && gapFillFromTs > 0) {
+          // FIX #2: correct loop termination logic
+          if (shouldStopAfterBatch && gapFillFromTs > 0) {
             hasMore = false;
           } else if (batch.length < 100) {
             hasMore = false;
           } else {
-            offsetId = (batch[batch.length - 1] as any).id;
+            msgOffsetId = lastProcessedId;
           }
         }
 
-        // Always update lastMessageAt/lastMessageText from DB (covers case where all messages already existed)
+        // Always update lastMessageAt/lastMessageText from DB
         if (lastMsgAt) {
           await db
             .update(dialogs)
@@ -983,6 +1026,17 @@ async function main(): Promise<void> {
   console.log(`[Worker] PID: ${process.pid}`);
   console.log(`[Worker] NODE_ENV: ${process.env.NODE_ENV}`);
 
+  // FIX #startup: Wait for old server instance to shut down during Render zero-downtime deploys.
+  // Render keeps the old instance alive for ~30s after the new one starts.
+  // We wait 90s to ensure the old instance has fully disconnected its Telegram sessions
+  // before we try to connect — this prevents AUTH_KEY_DUPLICATED errors.
+  if (process.env.NODE_ENV === "production") {
+    const STARTUP_DELAY_MS = 90 * 1000;
+    console.log(`[Worker] Waiting ${STARTUP_DELAY_MS / 1000}s for old instance to shut down (Render zero-downtime deploy grace period)...`);
+    await new Promise((r) => setTimeout(r, STARTUP_DELAY_MS));
+    console.log("[Worker] Grace period done. Restoring Telegram sessions...");
+  }
+
   // Initial session restore
   await restoreAllSessions();
 
@@ -1000,7 +1054,7 @@ async function main(): Promise<void> {
     );
   }, 3 * 60 * 1000);
 
-  // Watchdog: reconnect disconnected accounts every 5 minutes
+  // FIX #7: Watchdog reconnect skips banned/revoked accounts
   setInterval(async () => {
     console.log("[Worker] Watchdog: checking connections...");
     const accounts = await db
@@ -1013,6 +1067,15 @@ async function main(): Promise<void> {
       if (!acc.sessionString) continue;
       if (activeClients.has(acc.id)) continue;
       if (connectingAccounts.has(acc.id)) continue;
+      // FIX #7: don't try to reconnect permanently disconnected accounts
+      if (acc.status === "banned") continue;
+      // Don't reconnect if last error was permanent
+      const lastErr = acc.lastError ?? "";
+      if (
+        lastErr.includes("SESSION_REVOKED") ||
+        lastErr.includes("AUTH_KEY_INVALID") ||
+        lastErr.includes("USER_DEACTIVATED")
+      ) continue;
 
       console.log(
         `[Worker] Watchdog: reconnecting account #${acc.id} (@${acc.username})...`
@@ -1026,7 +1089,6 @@ async function main(): Promise<void> {
   }, 5 * 60 * 1000);
 
   // Sync watchdog: check for accounts with syncStatus='idle' or lastSyncAt=null every 2 minutes
-  // This picks up accounts reset via syncAll/syncHistory from the main server
   setInterval(async () => {
     const accounts = await db
       .select()
