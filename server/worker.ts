@@ -150,6 +150,13 @@ async function connectAccount(
     const msg = String(err?.message ?? err ?? "");
     console.error(`[Worker] Failed to connect account #${accountId}: ${msg}`);
 
+    // Save error to DB for debugging
+    await db
+      .update(telegramAccounts)
+      .set({ lastError: msg.substring(0, 500) })
+      .where(eq(telegramAccounts.id, accountId))
+      .catch(() => {});
+
     if (
       msg.includes("SESSION_REVOKED") ||
       msg.includes("AUTH_KEY_INVALID") ||
@@ -873,11 +880,12 @@ async function syncAccountHistory(
     console.log(
       `[Worker] Sync complete for account #${accountId}: ${syncedCount} dialogs`
     );
-  } catch (err) {
+  } catch (err: any) {
+    const errMsg = String(err?.message ?? err ?? "");
     console.error(`[Worker] Fatal sync error for account #${accountId}:`, err);
     await db
       .update(telegramAccounts)
-      .set({ syncStatus: "error" })
+      .set({ syncStatus: "error", lastError: errMsg.substring(0, 500) })
       .where(eq(telegramAccounts.id, accountId));
   }
 }
