@@ -928,7 +928,8 @@ export async function keepAliveAll(): Promise<void> {
 
 // ─── Force sync ALL accounts: connect if needed, then sync all dialogs ────────
 // This is called by the "Обновить" button in Inbox.
-// Reuses connectAccount() and syncAccountHistory() to avoid code duplication.
+// Self-contained: does NOT rely on syncAccountHistory() to avoid silent error swallowing.
+// Returns detailed per-account results including exact error messages.
 
 export async function forceSyncAll(): Promise<{ synced: number; errors: number; accounts: { id: number; username: string | null; dialogs: number; error?: string }[] }> {
   const db = await getDb();
@@ -938,47 +939,225 @@ export async function forceSyncAll(): Promise<{ synced: number; errors: number; 
   const results: { id: number; username: string | null; dialogs: number; error?: string }[] = [];
   let totalErrors = 0;
 
+  console.log(`[ForceSyncAll] Starting sync for ${accounts.length} accounts. Active clients: [${Array.from(activeClients.keys()).join(', ')}]`);
+
   for (const acc of accounts) {
     if (!acc.sessionString) {
       console.log(`[ForceSyncAll] Account #${acc.id} has no session, skipping`);
       continue;
     }
 
-    try {
-      // Step 1: Ensure account is connected in activeClients.
-      // On Render the accounts are already connected via restoreAllSessions().
-      // If NOT connected (e.g. first run or after crash), use connectAccount().
-      if (!activeClients.has(acc.id)) {
-        console.log(`[ForceSyncAll] Account #${acc.id} not connected, calling connectAccount()...`);
-        await connectAccount(acc.id, acc.sessionString);
-        // connectAccount calls saveSessionAndListen which also starts syncAccountHistory in background.
-        // Wait a moment for the connection to stabilize before we do our own sync.
-        await new Promise(r => setTimeout(r, 2000));
+    let client = activeClients.get(acc.id);
+
+    // Step 1: Connect if not already in activeClients
+    if (!client) {
+      console.log(`[ForceSyncAll] Account #${acc.id} not in activeClients, connecting...`);
+      try {
+        const session = new StringSession(acc.sessionString);
+        const newClient = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
+          connectionRetries: 3,
+          useWSS: true,
+        });
+        await newClient.connect();
+        // Verify connection works
+        const me = await newClient.getMe() as any;
+        await db.update(telegramAccounts).set({
+          status: "active",
+          telegramId: String(me.id ?? ""),
+          username: me.username ?? acc.username,
+          firstName: me.firstName ?? acc.firstName,
+          lastName: me.lastName ?? acc.lastName,
+          phone: me.phone ?? acc.phone,
+        }).where(eq(telegramAccounts.id, acc.id));
+        // Register event handlers
+        newClient.addEventHandler(
+          (event: NewMessageEvent) => handleIncomingMessage(acc.id, event),
+          new NewMessage({ incoming: true })
+        );
+        newClient.addEventHandler(
+          (event: NewMessageEvent) => handleOutgoingMessage(acc.id, event),
+          new NewMessage({ outgoing: true })
+        );
+        activeClients.set(acc.id, newClient);
+        client = newClient;
+        console.log(`[ForceSyncAll] Account #${acc.id} (@${me.username}) connected successfully`);
+      } catch (connErr: any) {
+        const errMsg = String(connErr?.message ?? connErr ?? "");
+        console.error(`[ForceSyncAll] Failed to connect account #${acc.id}: ${errMsg}`);
+        results.push({ id: acc.id, username: acc.username, dialogs: 0, error: `connect: ${errMsg}` });
+        totalErrors++;
+        continue;
       }
-
-      // Step 2: Reset lastSyncAt so syncAccountHistory does a FULL sync (not gap-fill)
-      await db.update(telegramAccounts)
-        .set({ lastSyncAt: null })
-        .where(eq(telegramAccounts.id, acc.id));
-
-      // Step 3: Run full sync using the shared syncAccountHistory function
-      console.log(`[ForceSyncAll] Starting full sync for account #${acc.id} (@${acc.username})...`);
-      await syncAccountHistory(acc.id);
-
-      // Step 4: Read the result from DB
-      const [updated] = await db.select({ syncedDialogs: telegramAccounts.syncedDialogs, username: telegramAccounts.username })
-        .from(telegramAccounts).where(eq(telegramAccounts.id, acc.id)).limit(1);
-      const dialogCount = updated?.syncedDialogs ?? 0;
-
-      console.log(`[ForceSyncAll] Account #${acc.id} (@${acc.username ?? updated?.username}): synced ${dialogCount} dialogs`);
-      results.push({ id: acc.id, username: acc.username ?? updated?.username ?? null, dialogs: dialogCount });
-
-    } catch (err: any) {
-      const errMsg = String(err?.message ?? err ?? "");
-      console.error(`[ForceSyncAll] Error for account #${acc.id}:`, errMsg);
-      results.push({ id: acc.id, username: acc.username, dialogs: 0, error: errMsg });
-      totalErrors++;
+    } else {
+      console.log(`[ForceSyncAll] Account #${acc.id} already in activeClients, using existing connection`);
     }
+
+    // Step 2: Get account info for direction detection
+    const [accInfo] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, acc.id)).limit(1);
+    const myTelegramId = accInfo?.telegramId ?? null;
+    const username = accInfo?.username ?? acc.username;
+
+    // Step 3: Fetch dialogs
+    let tgDialogs: any[];
+    try {
+      console.log(`[ForceSyncAll] Account #${acc.id} (@${username}): calling getDialogs(limit=500)...`);
+      tgDialogs = await client.getDialogs({ limit: 500 });
+      console.log(`[ForceSyncAll] Account #${acc.id}: got ${tgDialogs.length} dialogs from Telegram`);
+    } catch (dlgErr: any) {
+      const errMsg = String(dlgErr?.message ?? dlgErr ?? "");
+      console.error(`[ForceSyncAll] getDialogs failed for account #${acc.id}: ${errMsg}`);
+      results.push({ id: acc.id, username, dialogs: 0, error: `getDialogs: ${errMsg}` });
+      totalErrors++;
+      continue;
+    }
+
+    // Step 4: Mark as syncing
+    await db.update(telegramAccounts)
+      .set({ syncStatus: "syncing", lastSyncAt: null })
+      .where(eq(telegramAccounts.id, acc.id));
+
+    let syncedCount = 0;
+
+    // Step 5: Process each dialog
+    for (const tgDialog of tgDialogs) {
+      try {
+        const entity = tgDialog.entity as any;
+        if (!entity) continue;
+
+        let contactTelegramId: string;
+        let contactName: string;
+
+        if (entity.className === "User") {
+          if (entity.bot) continue;
+          contactTelegramId = String(entity.id);
+          contactName = `${entity.firstName ?? ""} ${entity.lastName ?? ""}`.trim() || entity.username || `User ${entity.id}`;
+        } else if (entity.className === "Chat") {
+          contactTelegramId = `group_${entity.id}`;
+          contactName = entity.title ?? `Group ${entity.id}`;
+        } else if (entity.className === "Channel") {
+          contactTelegramId = `channel_${entity.id}`;
+          contactName = entity.title ?? `Channel ${entity.id}`;
+        } else {
+          continue;
+        }
+
+        // Upsert contact
+        let contactId: number;
+        const existingContacts = await db.select().from(contacts)
+          .where(eq(contacts.telegramId, contactTelegramId)).limit(1);
+
+        if (existingContacts.length > 0) {
+          contactId = existingContacts[0].id;
+          await db.update(contacts).set({
+            username: entity.username ?? existingContacts[0].username,
+            firstName: entity.firstName ?? entity.title ?? existingContacts[0].firstName,
+            lastName: entity.lastName ?? existingContacts[0].lastName,
+            phone: entity.phone ?? existingContacts[0].phone,
+          }).where(eq(contacts.id, contactId));
+        } else {
+          const inserted = await db.insert(contacts).values({
+            telegramId: contactTelegramId,
+            username: entity.username ?? null,
+            firstName: entity.firstName ?? entity.title ?? null,
+            lastName: entity.lastName ?? null,
+            phone: entity.phone ?? null,
+          });
+          contactId = Number((inserted as any)[0]?.insertId ?? 0);
+          if (!contactId) continue;
+        }
+
+        // Find or create dialog
+        let dialogId: number;
+        const existingDialogs = await db.select().from(dialogs)
+          .where(and(eq(dialogs.telegramAccountId, acc.id), eq(dialogs.contactId, contactId)))
+          .orderBy(desc(dialogs.id)).limit(1);
+
+        if (existingDialogs.length > 0) {
+          dialogId = existingDialogs[0].id;
+        } else {
+          const inserted = await db.insert(dialogs).values({
+            telegramAccountId: acc.id,
+            contactId,
+            status: "open",
+            lastMessageText: null,
+            lastMessageAt: null,
+            unreadCount: 0,
+          });
+          dialogId = Number((inserted as any)[0]?.insertId ?? 0);
+          if (!dialogId) continue;
+        }
+
+        // Fetch messages (last 100 per dialog — fast, reliable)
+        let lastMsgText: string | null = null;
+        let lastMsgAt: Date | null = null;
+
+        try {
+          const batch = await client.getMessages(entity, { limit: 100 });
+          for (const msg of batch) {
+            const msgAny = msg as any;
+            if (!msgAny.id) continue;
+            const msgDateTs = Number(msgAny.date ?? 0);
+            const tgMsgId = String(msgAny.id);
+            const text = msgAny.message ?? msgAny.caption ?? "";
+            const msgDate = new Date(msgDateTs * 1000);
+
+            let isOutgoing: boolean;
+            if (myTelegramId) {
+              isOutgoing = msgAny.out === true || String(msgAny.fromId?.userId ?? "") === myTelegramId;
+            } else {
+              isOutgoing = msgAny.out === true;
+            }
+
+            if (!text && !msgAny.media) continue;
+
+            const existing = await db.select({ id: messages.id }).from(messages)
+              .where(and(eq(messages.dialogId, dialogId), eq(messages.telegramMessageId, tgMsgId))).limit(1);
+            if (existing.length > 0) continue;
+
+            await db.insert(messages).values({
+              dialogId,
+              direction: isOutgoing ? "outgoing" : "incoming",
+              text: text || null,
+              telegramMessageId: tgMsgId,
+              createdAt: msgDate,
+            });
+
+            if (!lastMsgAt || msgDate > lastMsgAt) {
+              lastMsgAt = msgDate;
+              lastMsgText = text || null;
+            }
+          }
+        } catch (msgErr: any) {
+          // Message fetch failure is non-fatal — dialog still counts as synced
+          console.warn(`[ForceSyncAll] Message fetch failed for dialog ${contactName}: ${msgErr?.message}`);
+        }
+
+        // Update dialog's last message
+        if (lastMsgAt) {
+          await db.update(dialogs).set({
+            lastMessageText: lastMsgText?.substring(0, 255) ?? null,
+            lastMessageAt: lastMsgAt,
+          }).where(eq(dialogs.id, dialogId));
+        }
+
+        syncedCount++;
+        // Small delay to avoid rate limiting
+        await new Promise(r => setTimeout(r, 30));
+
+      } catch (dlgProcessErr: any) {
+        console.error(`[ForceSyncAll] Error processing dialog for account #${acc.id}:`, dlgProcessErr?.message);
+      }
+    }
+
+    // Mark sync as done
+    await db.update(telegramAccounts).set({
+      syncStatus: "done",
+      lastSyncAt: new Date(),
+      syncedDialogs: syncedCount,
+    }).where(eq(telegramAccounts.id, acc.id));
+
+    console.log(`[ForceSyncAll] Account #${acc.id} (@${username}): synced ${syncedCount}/${tgDialogs.length} dialogs`);
+    results.push({ id: acc.id, username, dialogs: syncedCount });
   }
 
   const totalSynced = results.reduce((sum, r) => sum + r.dialogs, 0);

@@ -223,4 +223,4 @@
 ## Fix forceSyncAll errors on Render (Mar 12)
 - [x] Check Render logs for exact error from forceSyncAll (AUTH_KEY_DUPLICATED — duplicate connection attempt)
 - [x] Fix root cause: rewrote forceSyncAll to reuse connectAccount() + syncAccountHistory() instead of duplicating all logic
-- [ ] Verify sync actually works after deploy
+- [x] Verify sync actually works after deploy (deployed, live on Render)

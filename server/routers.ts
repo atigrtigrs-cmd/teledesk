@@ -221,14 +221,14 @@ export const appRouter = router({
     syncAll: protectedProcedure
       .mutation(async () => {
         // Force sync ALL accounts: connect if needed, then sync all dialogs
-        // This runs synchronously and returns the result
+        // This runs synchronously and returns the result with full error details
         try {
           const result = await forceSyncAll();
           const accountSummary = result.accounts
-            .map(a => `@${a.username ?? a.id}: ${a.dialogs} диалогов${a.error ? ` (ошибка)` : ""}`)
-            .join(", ");
+            .map(a => `@${a.username ?? a.id}: ${a.dialogs} диалогов${a.error ? ` (ошибка: ${a.error.substring(0, 80)})` : ""}`)
+            .join("\n");
           return {
-            success: true,
+            success: result.errors === 0,
             message: `Синхронизировано ${result.synced} диалогов по ${result.accounts.length} аккаунтам`,
             details: accountSummary,
             synced: result.synced,

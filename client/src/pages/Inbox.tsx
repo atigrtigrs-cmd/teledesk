@@ -151,10 +151,24 @@ export default function Inbox() {
   // Sync all accounts mutation
   const syncAll = trpc.accounts.syncAll.useMutation({
     onSuccess: (res) => {
-      toast.success(res.message, {
-        description: res.details || undefined,
-        duration: 6000,
-      });
+      if (res.errors > 0 && res.synced === 0) {
+        // All accounts failed — show as error with details
+        toast.error(res.message, {
+          description: res.details || undefined,
+          duration: 10000,
+        });
+      } else if (res.errors > 0) {
+        // Partial success
+        toast.warning(res.message, {
+          description: res.details || undefined,
+          duration: 8000,
+        });
+      } else {
+        toast.success(res.message, {
+          description: res.details || undefined,
+          duration: 6000,
+        });
+      }
       utils.dialogs.list.invalidate();
       utils.accounts.list.invalidate();
     },
