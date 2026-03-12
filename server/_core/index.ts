@@ -66,17 +66,18 @@ async function startServer() {
     // Restore all active Telegram sessions after server is up
     // Skip in development to avoid AUTH_KEY_DUPLICATED conflicts with Render production
     if (process.env.NODE_ENV !== "development") {
-      // Wait 30 seconds before connecting Telegram sessions.
-      // Render keeps the old process alive for ~10-20s during deploys.
+      // Wait 60 seconds before connecting Telegram sessions.
+      // Render keeps the old process alive for ~30-60s during deploys.
       // If we connect immediately, both old+new processes try to use the same session
       // which causes AUTH_KEY_DUPLICATED. Waiting ensures the old process is dead.
-      console.log("[Startup] Waiting 30s before restoring Telegram sessions (Render deploy grace period)...");
+      console.log("[Startup] Waiting 60s before restoring Telegram sessions (Render deploy grace period)...");
       setTimeout(() => {
         restoreAllSessions().catch(err =>
           console.error("[Startup] Failed to restore Telegram sessions:", err)
         );
-      }, 30000);
-      // Keep-alive ping: every 2 minutes, send a lightweight getMe() to each active client
+      }, 60000);
+
+      // Keep-alive ping: every 3 minutes, send a lightweight getMe() to each active client
       // This prevents Render's idle connection timeout from dropping MTProto sessions
       setInterval(async () => {
         try {
@@ -84,9 +85,10 @@ async function startServer() {
         } catch (err) {
           console.error("[KeepAlive] Ping failed:", err);
         }
-      }, 2 * 60 * 1000);
+      }, 3 * 60 * 1000);
 
-      // Auto-reconnect watchdog: every 5 minutes, reconnect any disconnected accounts
+      // Auto-reconnect watchdog: every 10 minutes, reconnect any disconnected accounts
+      // Uses mutex so it won't run if restoreAllSessions is already running
       setInterval(async () => {
         try {
           console.log("[Watchdog] Checking Telegram account connections...");
@@ -94,7 +96,7 @@ async function startServer() {
         } catch (err) {
           console.error("[Watchdog] Auto-reconnect failed:", err);
         }
-      }, 5 * 60 * 1000);
+      }, 10 * 60 * 1000);
     } else {
       console.log("[Startup] Skipping Telegram session restore in development mode");
     }

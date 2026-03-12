@@ -1,0 +1,46 @@
+{
+  "query": "SELECT id, email, role, createdAt FROM users ORDER BY id LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, email, role, createdAt FROM users ORDER BY id LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "email": "atigr.tigrs@gmail.com",
+      "role": "admin",
+      "createdAt": "2026-03-05 14:18:32"
+    },
+    {
+      "id": "60001",
+      "email": "admin@test.com",
+      "role": "user",
+      "createdAt": "2026-03-05 15:18:01"
+    },
+    {
+      "id": "60002",
+      "email": "admin@teledesk.com",
+      "role": "user",
+      "createdAt": "2026-03-05 15:23:50"
+    },
+    {
+      "id": "60003",
+      "email": "test@teledesk.com",
+      "role": "user",
+      "createdAt": "2026-03-05 15:30:52"
+    },
+    {
+      "id": "90001",
+      "email": "offers@lead-cash.com",
+      "role": "admin",
+      "createdAt": "2026-03-10 06:16:00"
+    },
+    {
+      "id": "120001",
+      "email": "anna.kuzmina@lead-cash.com",
+      "role": "admin",
+      "createdAt": "2026-03-10 07:35:56"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\trole\tcreatedAt\n1\tatigr.tigrs@gmail.com\tadmin\t2026-03-05 14:18:32\n60001\tadmin@test.com\tuser\t2026-03-05 15:18:01\n60002\tadmin@teledesk.com\tuser\t2026-03-05 15:23:50\n60003\ttest@teledesk.com\tuser\t2026-03-05 15:30:52\n90001\toffers@lead-cash.com\tadmin\t2026-03-10 06:16:00\n120001\tanna.kuzmina@lead-cash.com\tadmin\t2026-03-10 07:35:56\n",
+  "stderr": "",
+  "execution_time_ms": 60
+}

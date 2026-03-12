@@ -24,6 +24,12 @@ const TELEGRAM_API_HASH = process.env.TELEGRAM_API_HASH ?? "c287b0998fac419b7764
 // Map of accountId → TelegramClient
 const activeClients = new Map<number, TelegramClient>();
 
+// Mutex to prevent parallel connection attempts for the same account
+const connectingAccounts = new Set<number>();
+
+// Flag to track if restoreAllSessions is currently running
+let isRestoringAllSessions = false;
+
 // ─── QR Login Flow ───────────────────────────────────────────────────────────
 
 export async function startQRLogin(accountId: number): Promise<{ token: string; expires: number }> {
@@ -60,8 +66,15 @@ export async function startQRLogin(accountId: number): Promise<{ token: string; 
 // ─── Restore all active sessions on server start ─────────────────────────────
 
 export async function restoreAllSessions(): Promise<void> {
+  // Prevent parallel runs — only one restore at a time
+  if (isRestoringAllSessions) {
+    console.log("[Telegram] restoreAllSessions already running, skipping");
+    return;
+  }
+  isRestoringAllSessions = true;
+
   const db = await getDb();
-  if (!db) return;
+  if (!db) { isRestoringAllSessions = false; return; }
 
   try {
     // Restore ALL accounts that have a session string, regardless of current status.
@@ -80,56 +93,62 @@ export async function restoreAllSessions(): Promise<void> {
         continue;
       }
 
-      // Retry with exponential backoff for AUTH_KEY_DUPLICATED
-      // (old Render process may still be alive for a few seconds)
-      let connected = false;
-      for (let attempt = 1; attempt <= 3 && !connected; attempt++) {
-        try {
-          await connectAccount(acc.id, acc.sessionString);
-          console.log(`[Telegram] Restored session for account #${acc.id} (attempt ${attempt})`);
-          connected = true;
-        } catch (err: any) {
-          const errMsg = String(err?.message ?? err ?? "");
-          if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
-            if (attempt < 3) {
-              const delay = attempt * 15000; // 15s, 30s
-              console.warn(`[Telegram] Account #${acc.id} AUTH_KEY_DUPLICATED (attempt ${attempt}/3) — waiting ${delay/1000}s before retry...`);
-              await new Promise(r => setTimeout(r, delay));
-            } else {
-              console.warn(`[Telegram] Account #${acc.id} AUTH_KEY_DUPLICATED after 3 attempts — session in use by another process`);
-            }
-          } else if (errMsg.includes("FLOOD_WAIT")) {
-            console.warn(`[Telegram] Account #${acc.id} FLOOD_WAIT — rate limited, will retry later`);
-            break;
-          } else {
-            console.error(`[Telegram] Failed to restore account #${acc.id}:`, err);
-            if (errMsg.includes("SESSION_REVOKED") || errMsg.includes("AUTH_KEY_INVALID") || errMsg.includes("USER_DEACTIVATED")) {
-              await db
-                .update(telegramAccounts)
-                .set({ status: "disconnected" })
-                .where(eq(telegramAccounts.id, acc.id));
-            }
-            break;
+      // Single attempt per account — no retry delays.
+      // If AUTH_KEY_DUPLICATED, the watchdog (every 10 min) will retry automatically.
+      try {
+        await connectAccount(acc.id, acc.sessionString);
+        console.log(`[Telegram] Restored session for account #${acc.id} (@${acc.username})`);
+      } catch (err: any) {
+        const errMsg = String(err?.message ?? err ?? "");
+        if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
+          console.warn(`[Telegram] Account #${acc.id} AUTH_KEY_DUPLICATED — session in use by another process, will retry later`);
+        } else if (errMsg.includes("FLOOD_WAIT")) {
+          console.warn(`[Telegram] Account #${acc.id} FLOOD_WAIT — rate limited, will retry later`);
+        } else {
+          console.error(`[Telegram] Failed to restore account #${acc.id}:`, err);
+          if (errMsg.includes("SESSION_REVOKED") || errMsg.includes("AUTH_KEY_INVALID") || errMsg.includes("USER_DEACTIVATED")) {
+            await db
+              .update(telegramAccounts)
+              .set({ status: "disconnected" })
+              .where(eq(telegramAccounts.id, acc.id));
           }
         }
       }
     }
   } catch (err) {
     console.error("[Telegram] Failed to restore sessions:", err);
+  } finally {
+    isRestoringAllSessions = false;
   }
 }
 
 // ─── Connect account with existing session ───────────────────────────────────
 
 export async function connectAccount(accountId: number, sessionString: string): Promise<void> {
-  const session = new StringSession(sessionString);
-  const client = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
-    connectionRetries: 3,
-    useWSS: true,
-  });
+  // Prevent parallel connection attempts for the same account
+  if (connectingAccounts.has(accountId)) {
+    throw new Error(`Account #${accountId} is already being connected`);
+  }
+  // If already connected, skip
+  if (activeClients.has(accountId)) {
+    console.log(`[Telegram] Account #${accountId} already in activeClients, skipping connect`);
+    return;
+  }
 
-  await client.connect();
-  await saveSessionAndListen(accountId, client, sessionString);
+  connectingAccounts.add(accountId);
+  try {
+    const session = new StringSession(sessionString);
+    const client = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
+      connectionRetries: 1,
+      useWSS: false, // TCP is more stable than WSS for long-running connections
+      autoReconnect: false, // We handle reconnects ourselves via watchdog
+    });
+
+    await client.connect();
+    await saveSessionAndListen(accountId, client, sessionString);
+  } finally {
+    connectingAccounts.delete(accountId);
+  }
 }
 
 // ─── Disconnect account ───────────────────────────────────────────────────────
@@ -961,32 +980,42 @@ export async function forceSyncAll(): Promise<{ synced: number; errors: number; 
 
     let client = activeClients.get(acc.id);
 
-    // If not connected, try once to connect.
-    // Note: AUTH_KEY_DUPLICATED means another process is using the same session.
-    // The startup restoreAllSessions (with 30s grace + retry) handles this.
-    // Here we just do a single attempt — no long waits to avoid HTTP timeout.
+    // If not in activeClients, wait up to 30s for restoreAllSessions to finish (if running)
+    // then try to connect ourselves if still not connected
     if (!client) {
-      console.log(`[ForceSyncAll] Account #${acc.id} (@${acc.username}) not in activeClients — attempting to connect...`);
-      try {
-        await connectAccount(acc.id, acc.sessionString);
+      // Wait for any in-progress restoreAllSessions to finish
+      if (isRestoringAllSessions) {
+        console.log(`[ForceSyncAll] Account #${acc.id}: waiting for restoreAllSessions to finish...`);
+        for (let i = 0; i < 30 && isRestoringAllSessions; i++) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
         client = activeClients.get(acc.id);
-        console.log(`[ForceSyncAll] Account #${acc.id} connected successfully`);
-      } catch (err: any) {
-        const connectErr = String(err?.message ?? err ?? "");
-        console.error(`[ForceSyncAll] Account #${acc.id} connect failed: ${connectErr}`);
-        results.push({ id: acc.id, username: acc.username, dialogs: 0, error: connectErr });
-        totalErrors++;
-        continue;
       }
+
+      // Still not connected — try to connect ourselves
       if (!client) {
-        results.push({ id: acc.id, username: acc.username, dialogs: 0, error: "Не удалось подключиться" });
+        console.log(`[ForceSyncAll] Account #${acc.id} (@${acc.username}) not in activeClients — attempting to connect...`);
+        try {
+          await connectAccount(acc.id, acc.sessionString);
+          client = activeClients.get(acc.id);
+          console.log(`[ForceSyncAll] Account #${acc.id} connected successfully`);
+        } catch (err: any) {
+          const connectErr = String(err?.message ?? err ?? "");
+          console.error(`[ForceSyncAll] Account #${acc.id} connect failed: ${connectErr}`);
+          results.push({ id: acc.id, username: acc.username, dialogs: 0, error: connectErr });
+          totalErrors++;
+          continue;
+        }
+      }
+
+      if (!client) {
+        results.push({ id: acc.id, username: acc.username, dialogs: 0, error: "Не подключён. Попробуйте через минуту" });
         totalErrors++;
         continue;
       }
     }
 
     console.log(`[ForceSyncAll] Account #${acc.id} (@${acc.username}) connected, syncing dialogs...`);
-
     // Step 2: Get account info for direction detection
     const [accInfo] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, acc.id)).limit(1);
     const myTelegramId = accInfo?.telegramId ?? null;

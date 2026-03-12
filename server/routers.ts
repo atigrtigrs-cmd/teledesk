@@ -141,6 +141,29 @@ export const appRouter = router({
       return getActiveAccountIds();
     }),
 
+    debugStatus: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const activeIds = getActiveAccountIds();
+      const accs = await db.select({
+        id: telegramAccounts.id,
+        username: telegramAccounts.username,
+        status: telegramAccounts.status,
+        syncStatus: telegramAccounts.syncStatus,
+        syncedDialogs: telegramAccounts.syncedDialogs,
+        lastSyncAt: telegramAccounts.lastSyncAt,
+        hasSession: sql<boolean>`session_string IS NOT NULL AND session_string != ''`,
+      }).from(telegramAccounts);
+      return {
+        activeClientIds: activeIds,
+        accounts: accs.map(a => ({
+          ...a,
+          isActiveInMemory: activeIds.includes(a.id),
+        })),
+        timestamp: new Date().toISOString(),
+      };
+    }),
+
     updateBitrixSettings: protectedProcedure
       .input(z.object({
         id: z.number(),
