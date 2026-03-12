@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, username, status, syncStatus, syncedDialogs, lastSyncAt FROM telegram_accounts LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, username, status, syncStatus, syncedDialogs, lastSyncAt FROM telegram_accounts LIMIT 10;",
+  "rows": [
+    {
+      "id": "180001",
+      "username": "affiliate_LeadCash",
+      "status": "active",
+      "syncStatus": "done",
+      "syncedDialogs": "1",
+      "lastSyncAt": "2026-03-12 12:47:50"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tstatus\tsyncStatus\tsyncedDialogs\tlastSyncAt\n180001\taffiliate_LeadCash\tactive\tdone\t1\t2026-03-12 12:47:50\n",
+  "stderr": "",
+  "execution_time_ms": 58
+}

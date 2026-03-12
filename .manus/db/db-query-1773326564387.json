@@ -1,0 +1,100 @@
+{
+  "query": "SELECT COUNT(*) as total FROM dialogs; SELECT COUNT(*) as with_date FROM dialogs WHERE lastMessageAt IS NOT NULL; SELECT COUNT(*) as null_date FROM dialogs WHERE lastMessageAt IS NULL; SELECT id, lastMessageAt, lastMessageText FROM dialogs ORDER BY lastMessageAt DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT COUNT(*) as total FROM dialogs; SELECT COUNT(*) as with_date FROM dialogs WHERE lastMessageAt IS NOT NULL; SELECT COUNT(*) as null_date FROM dialogs WHERE lastMessageAt IS NULL; SELECT id, lastMessageAt, lastMessageText FROM dialogs ORDER BY lastMessageAt DESC LIMIT 5;",
+  "rows": [
+    {
+      "total": "1012"
+    },
+    {
+      "total": "with_date"
+    },
+    {
+      "total": "6"
+    },
+    {
+      "total": "null_date"
+    },
+    {
+      "total": "1006"
+    },
+    {
+      "total": "id\tlastMessageAt\tlastMessageText"
+    },
+    {
+      "total": "210005\t2026-03-12 12:35:58\t🔹 P2P UA (Украина) 🇺🇦"
+    },
+    {
+      "total": "Ищем P2P-трейдеров для работы по Украине."
+    },
+    {
+      "total": "Подходит как соло, так и для команд."
+    },
+    {
+      "total": "━━━━━━━━━━━━━"
+    },
+    {
+      "total": "💵 Условия"
+    },
+    {
+      "total": "▪️ Вход — 4%"
+    },
+    {
+      "total": "▪️Выход — ~0,7%"
+    },
+    {
+      "total": "▪️ Минимальный платёж — 300 грн"
+    },
+    {
+      "total": "▪️ Страховой депозит — от 1000$"
+    },
+    {
+      "total": "▪️ Рабочий депозит — от 1000$"
+    },
+    {
+      "total": "━━"
+    },
+    {
+      "total": "210004\t2026-03-12 12:33:38\tИщу команду по фб адс , готов к работе"
+    },
+    {
+      "total": "210006\t2026-03-12 12:32:40\tWTS Facebook spend / Google trashold / Tik Tok ads / Twitter ADS / Google spend / Google ads / Google play console / Taboola"
+    },
+    {
+      "total": "📱 Facebook Spend Accounts:"
+    },
+    {
+      "total": "📱Google invoice "
+    },
+    {
+      "total": "🕊Google Ads Accounts with Balance:"
+    },
+    {
+      "total": "Attract Traffic to Your Business"
+    },
+    {
+      "total": "Promoting you"
+    },
+    {
+      "total": "210002\t2026-02-24 12:51:48\tНаписала ему вопросы"
+    },
+    {
+      "total": "Спасибо!"
+    },
+    {
+      "total": "210001\t2026-01-13 22:24:21\tВсем привет! "
+    },
+    {
+      "total": "Завтра буду жестко бухать и поглощать 115кг еды, но это завтра. "
+    },
+    {
+      "total": "А пока: льем in-app на мобильные прилки, любые вертикали. "
+    },
+    {
+      "total": "А также кабы рессейлим! FB к примеру под 0% можем давать, а если умеете тратить большие бабки, то и кешбек неплохой"
+    }
+  ],
+  "messages": [],
+  "stdout": "total\n1012\nwith_date\n6\nnull_date\n1006\nid\tlastMessageAt\tlastMessageText\n210005\t2026-03-12 12:35:58\t🔹 P2P UA (Украина) 🇺🇦\n\nИщем P2P-трейдеров для работы по Украине.\nПодходит как соло, так и для команд.\n━━━━━━━━━━━━━\n💵 Условия\n▪️ Вход — 4%\n▪️Выход — ~0,7%\n▪️ Минимальный платёж — 300 грн\n▪️ Страховой депозит — от 1000$\n▪️ Рабочий депозит — от 1000$\n━━\n210004\t2026-03-12 12:33:38\tИщу команду по фб адс , готов к работе\n210006\t2026-03-12 12:32:40\tWTS Facebook spend / Google trashold / Tik Tok ads / Twitter ADS / Google spend / Google ads / Google play console / Taboola\n\n📱 Facebook Spend Accounts:\n📱Google invoice \n🕊Google Ads Accounts with Balance:\n\nAttract Traffic to Your Business\nPromoting you\n210002\t2026-02-24 12:51:48\tНаписала ему вопросы\nСпасибо!\n210001\t2026-01-13 22:24:21\tВсем привет! \n\nЗавтра буду жестко бухать и поглощать 115кг еды, но это завтра. \n\nА пока: льем in-app на мобильные прилки, любые вертикали. \nА также кабы рессейлим! FB к примеру под 0% можем давать, а если умеете тратить большие бабки, то и кешбек неплохой\n",
+  "stderr": "",
+  "execution_time_ms": 86
+}

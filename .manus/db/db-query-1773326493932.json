@@ -1,0 +1,119 @@
+{
+  "query": "SELECT COUNT(*) as total, COUNT(lastMessageAt) as with_date, COUNT(*) - COUNT(lastMessageAt) as null_date FROM dialogs; SELECT id, lastMessageAt, lastMessageText FROM dialogs ORDER BY lastMessageAt DESC LIMIT 10; SELECT id, lastMessageAt, lastMessageText FROM dialogs ORDER BY lastMessageAt ASC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT COUNT(*) as total, COUNT(lastMessageAt) as with_date, COUNT(*) - COUNT(lastMessageAt) as null_date FROM dialogs; SELECT id, lastMessageAt, lastMessageText FROM dialogs ORDER BY lastMessageAt DESC LIMIT 10; SELECT id, lastMessageAt, lastMessageText FROM dialogs ORDER BY lastMessageAt ASC LIMIT 5;",
+  "rows": [
+    {
+      "total": "1012",
+      "with_date": "5",
+      "null_date": "1007"
+    },
+    {
+      "total": "id",
+      "with_date": "lastMessageAt",
+      "null_date": "lastMessageText"
+    },
+    {
+      "total": "210005",
+      "with_date": "2026-03-12 12:35:58",
+      "null_date": "🔹 P2P UA (Украина) 🇺🇦"
+    },
+    {
+      "total": "210004",
+      "with_date": "2026-03-12 12:33:38",
+      "null_date": "Ищу команду по фб адс , готов к работе"
+    },
+    {
+      "total": "210006",
+      "with_date": "2026-03-12 12:32:40",
+      "null_date": "WTS Facebook spend / Google trashold / Tik Tok ads / Twitter ADS / Google spend / Google ads / Google play console / Taboola"
+    },
+    {
+      "total": "210001",
+      "with_date": "2026-01-13 22:24:21",
+      "null_date": "Всем привет! "
+    },
+    {
+      "total": "210003",
+      "with_date": "2025-07-18 12:09:13",
+      "null_date": "Ты по таким легким вопросам лучше обращайся к Анне или Ульяне )"
+    },
+    {
+      "total": "210008",
+      "with_date": "NULL",
+      "null_date": "NULL"
+    },
+    {
+      "total": "210007",
+      "with_date": "NULL",
+      "null_date": "NULL"
+    },
+    {
+      "total": "210009",
+      "with_date": "NULL",
+      "null_date": "NULL"
+    },
+    {
+      "total": "210002",
+      "with_date": "NULL",
+      "null_date": "NULL"
+    },
+    {
+      "total": "210010",
+      "with_date": "NULL",
+      "null_date": "NULL"
+    },
+    {
+      "total": "id",
+      "with_date": "lastMessageAt",
+      "null_date": "lastMessageText"
+    },
+    {
+      "total": "210008",
+      "with_date": "NULL",
+      "null_date": "NULL"
+    },
+    {
+      "total": "210009",
+      "with_date": "NULL",
+      "null_date": "NULL"
+    },
+    {
+      "total": "210002",
+      "with_date": "NULL",
+      "null_date": "NULL"
+    },
+    {
+      "total": "210007",
+      "with_date": "NULL",
+      "null_date": "NULL"
+    },
+    {
+      "total": "210010",
+      "with_date": "NULL",
+      "null_date": "NULL"
+    }
+  ],
+  "messages": [
+    "Ищем P2P-трейдеров для работы по Украине.",
+    "Подходит как соло, так и для команд.",
+    "━━━━━━━━━━━━━",
+    "💵 Условия",
+    "▪️ Вход — 4%",
+    "▪️Выход — ~0,7%",
+    "▪️ Минимальный платёж — 300 грн",
+    "▪️ Страховой депозит — от 1000$",
+    "▪️ Рабочий депозит — от 1000$",
+    "━━",
+    "📱 Facebook Spend Accounts:",
+    "📱Google invoice ",
+    "🕊Google Ads Accounts with Balance:",
+    "Attract Traffic to Your Business",
+    "Promoting you",
+    "Завтра буду жестко бухать и поглощать 115кг еды, но это завтра. ",
+    "А пока: льем in-app на мобильные прилки, любые вертикали. ",
+    "А также кабы рессейлим! FB к примеру под 0% можем давать, а если умеете тратить большие бабки, то и кешбек неплохой"
+  ],
+  "stdout": "total\twith_date\tnull_date\n1012\t5\t1007\nid\tlastMessageAt\tlastMessageText\n210005\t2026-03-12 12:35:58\t🔹 P2P UA (Украина) 🇺🇦\n\nИщем P2P-трейдеров для работы по Украине.\nПодходит как соло, так и для команд.\n━━━━━━━━━━━━━\n💵 Условия\n▪️ Вход — 4%\n▪️Выход — ~0,7%\n▪️ Минимальный платёж — 300 грн\n▪️ Страховой депозит — от 1000$\n▪️ Рабочий депозит — от 1000$\n━━\n210004\t2026-03-12 12:33:38\tИщу команду по фб адс , готов к работе\n210006\t2026-03-12 12:32:40\tWTS Facebook spend / Google trashold / Tik Tok ads / Twitter ADS / Google spend / Google ads / Google play console / Taboola\n\n📱 Facebook Spend Accounts:\n📱Google invoice \n🕊Google Ads Accounts with Balance:\n\nAttract Traffic to Your Business\nPromoting you\n210001\t2026-01-13 22:24:21\tВсем привет! \n\nЗавтра буду жестко бухать и поглощать 115кг еды, но это завтра. \n\nА пока: льем in-app на мобильные прилки, любые вертикали. \nА также кабы рессейлим! FB к примеру под 0% можем давать, а если умеете тратить большие бабки, то и кешбек неплохой\n210003\t2025-07-18 12:09:13\tТы по таким легким вопросам лучше обращайся к Анне или Ульяне )\n210008\tNULL\tNULL\n210007\tNULL\tNULL\n210009\tNULL\tNULL\n210002\tNULL\tNULL\n210010\tNULL\tNULL\nid\tlastMessageAt\tlastMessageText\n210008\tNULL\tNULL\n210009\tNULL\tNULL\n210002\tNULL\tNULL\n210007\tNULL\tNULL\n210010\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 79
+}
