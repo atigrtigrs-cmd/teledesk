@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, username, status, sync_status, synced_dialogs, session_string IS NOT NULL as has_session FROM telegram_accounts;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, username, status, sync_status, synced_dialogs, session_string IS NOT NULL as has_session FROM telegram_accounts;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'sync_status' in 'field list'"
+  ]
+}

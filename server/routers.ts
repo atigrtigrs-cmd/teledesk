@@ -157,7 +157,7 @@ export const appRouter = router({
         syncStatus: telegramAccounts.syncStatus,
         syncedDialogs: telegramAccounts.syncedDialogs,
         lastSyncAt: telegramAccounts.lastSyncAt,
-        hasSession: sql<number>`CASE WHEN session_string IS NOT NULL AND session_string != '' THEN 1 ELSE 0 END`,
+        hasSession: sql<number>`CASE WHEN sessionString IS NOT NULL AND sessionString != '' THEN 1 ELSE 0 END`,
       }).from(telegramAccounts);
       const activeIds = accs.filter(a => a.status === "active").map(a => a.id);
       return {
