@@ -22,6 +22,7 @@
  */
 
 import "dotenv/config";
+import http from "http";
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { NewMessage } from "telegram/events/index.js";
@@ -136,12 +137,15 @@ async function connectAccount(
     activeClients.set(accountId, client);
 
     // Start history sync in background
-    syncAccountHistory(accountId, client, myTelegramId).catch((err) =>
-      console.error(
-        `[Worker] History sync failed for account #${accountId}:`,
-        err
+    syncingAccounts.add(accountId);
+    syncAccountHistory(accountId, client, myTelegramId)
+      .catch((err) =>
+        console.error(
+          `[Worker] History sync failed for account #${accountId}:`,
+          err
+        )
       )
-    );
+      .finally(() => syncingAccounts.delete(accountId));
   } catch (err: any) {
     const msg = String(err?.message ?? err ?? "");
     console.error(`[Worker] Failed to connect account #${accountId}: ${msg}`);
@@ -1009,6 +1013,44 @@ async function main(): Promise<void> {
   }, 2 * 60 * 1000);
 
   console.log("[Worker] All intervals started. Worker is running.");
+
+  // Minimal HTTP server for health checks and force-sync trigger
+  const port = parseInt(process.env.WORKER_PORT ?? "3001");
+  const httpServer = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        status: "ok",
+        uptime: process.uptime(),
+        activeClients: Array.from(activeClients.keys()),
+        syncingAccounts: Array.from(syncingAccounts),
+      }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/force-sync") {
+      const accounts = await db.select().from(telegramAccounts).where(isNotNull(telegramAccounts.sessionString)).catch(() => []);
+      let triggered = 0;
+      for (const acc of accounts) {
+        if (!acc.sessionString) continue;
+        if (!activeClients.has(acc.id)) continue;
+        if (syncingAccounts.has(acc.id)) continue;
+        const client = activeClients.get(acc.id)!;
+        syncingAccounts.add(acc.id);
+        syncAccountHistory(acc.id, client, acc.telegramId ?? null)
+          .catch(err => console.error(`[Worker] Force-sync error for #${acc.id}:`, err))
+          .finally(() => syncingAccounts.delete(acc.id));
+        triggered++;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ triggered }));
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  httpServer.listen(port, () => {
+    console.log(`[Worker] HTTP server listening on port ${port}`);
+  });
 }
 
 main().catch((err) => {
