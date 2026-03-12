@@ -1,0 +1,22 @@
+{
+  "query": "SELECT \n  CASE \n    WHEN c.telegramId LIKE 'channel_%' THEN 'channel'\n    WHEN c.telegramId LIKE 'group_%' THEN 'group'\n    ELSE 'user'\n  END as type,\n  COUNT(*) as cnt\nFROM dialogs d \nJOIN contacts c ON d.contactId = c.id \nGROUP BY type;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT \n  CASE \n    WHEN c.telegramId LIKE 'channel_%' THEN 'channel'\n    WHEN c.telegramId LIKE 'group_%' THEN 'group'\n    ELSE 'user'\n  END as type,\n  COUNT(*) as cnt\nFROM dialogs d \nJOIN contacts c ON d.contactId = c.id \nGROUP BY type;",
+  "rows": [
+    {
+      "type": "group",
+      "cnt": "5"
+    },
+    {
+      "type": "user",
+      "cnt": "12"
+    },
+    {
+      "type": "channel",
+      "cnt": "3"
+    }
+  ],
+  "messages": [],
+  "stdout": "type\tcnt\ngroup\t5\nuser\t12\nchannel\t3\n",
+  "stderr": "",
+  "execution_time_ms": 104
+}

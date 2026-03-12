@@ -356,6 +356,10 @@ async function handleIncomingMessage(
     if (!peerInfo) return;
 
     const { peerId: senderId, peerType } = peerInfo;
+
+    // Skip channels and supergroups — only handle personal chats and small groups
+    if (peerType === "channel") return;
+
     const text = (msg as any).message ?? "";
     const tgMsgId = String((msg as any).id);
 
@@ -502,7 +506,11 @@ async function handleOutgoingMessage(
     const peerInfo = extractPeerInfo(msg);
     if (!peerInfo) return;
 
-    const { peerId: recipientId } = peerInfo;
+    const { peerId: recipientId, peerType: outPeerType } = peerInfo;
+
+    // Skip channels and supergroups
+    if (outPeerType === "channel") return;
+
     const text = (msg as any).message ?? "";
     const tgMsgId = String((msg as any).id);
 

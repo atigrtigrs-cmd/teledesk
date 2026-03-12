@@ -1,0 +1,8 @@
+{
+  "query": "DELETE m FROM messages m JOIN dialogs d ON m.dialogId = d.id JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%';\nDELETE dt FROM dialog_tags dt JOIN dialogs d ON dt.dialogId = d.id JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%';\nDELETE d FROM dialogs d JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%';\nDELETE FROM contacts WHERE telegramId LIKE 'channel_%' OR telegramId LIKE 'group_%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute DELETE m FROM messages m JOIN dialogs d ON m.dialogId = d.id JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%';\nDELETE dt FROM dialog_tags dt JOIN dialogs d ON dt.dialogId = d.id JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%';\nDELETE d FROM dialogs d JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%';\nDELETE FROM contacts WHERE telegramId LIKE 'channel_%' OR telegramId LIKE 'group_%';",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1451 (23000) at line 3: Cannot delete or update a parent row: a foreign key constraint fails (`bdpidwpftxap5jockvklnw`.`messages`, CONSTRAINT `messages_dialogId_fk` FOREIGN KEY (`dialogId`) REFERENCES `dialogs` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION)"
+  ]
+}
