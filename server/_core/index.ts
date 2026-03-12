@@ -86,7 +86,11 @@ async function startServer() {
       // Render zero-downtime deploys keep old process alive for ~60-120s.
       // We wait up to 3 minutes for the old process to die.
       console.log("[Startup] Waiting for process lock before restoring Telegram sessions...");
-      waitForProcessLock(3 * 60 * 1000).then(() => {
+      waitForProcessLock(3 * 60 * 1000).then(async () => {
+        // Wait 20 extra seconds after lock is acquired to let Telegram server
+        // release old sessions (Telegram keeps sessions alive ~10-15s after disconnect)
+        console.log("[Startup] Lock acquired — waiting 20s for Telegram server to release old sessions...");
+        await new Promise(r => setTimeout(r, 20000));
         return restoreAllSessions();
       }).catch(err =>
         console.error("[Startup] Failed to restore Telegram sessions:", err)
