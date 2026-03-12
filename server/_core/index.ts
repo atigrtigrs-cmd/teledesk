@@ -62,7 +62,18 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
-    console.log("[Startup] Main server started. Telegram sync is handled by the Worker process.");
+    console.log("[Startup] Main server started. Starting Telegram Worker in-process...");
+    // Start Worker in the same process to avoid AUTH_KEY_DUPLICATED on Render
+    // (separate background workers get different IPs on each deploy)
+    if (process.env.NODE_ENV !== "development") {
+      import("../worker").then((mod) => {
+        mod.startWorker().catch((err: any) => {
+          console.error("[Worker] Failed to start:", err);
+        });
+      }).catch((err) => {
+        console.error("[Worker] Failed to import worker module:", err);
+      });
+    }
   });
 }
 

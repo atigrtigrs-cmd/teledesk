@@ -248,3 +248,8 @@
 ## Filter Supergroups from Sync (Mar 13)
 - [x] Skip supergroups and channels in syncAccountHistory (only sync User dialogs + small groups)
 - [x] Clean existing supergroup dialogs from DB
+
+## Move Worker into Main Server (Mar 13)
+- [ ] Move Worker startup into main Express server process (fix AUTH_KEY_DUPLICATED on Render)
+- [ ] Remove separate background worker service from Render
+- [ ] Verify sync starts automatically after deploy

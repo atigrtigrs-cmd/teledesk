@@ -1097,7 +1097,15 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((err) => {
-  console.error("[Worker] Fatal error:", err);
-  process.exit(1);
-});
+// Export for in-process usage from main server
+export async function startWorker(): Promise<void> {
+  return main();
+}
+
+// Only auto-start when run directly as a standalone worker process
+if (process.env.RUN_WORKER_STANDALONE === "true") {
+  main().catch((err) => {
+    console.error("[Worker] Fatal error:", err);
+    process.exit(1);
+  });
+}
