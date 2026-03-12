@@ -134,17 +134,31 @@ export async function connectAccount(accountId: number, sessionString: string): 
     console.log(`[Telegram] Account #${accountId} already in activeClients, skipping connect`);
     return;
   }
-
   connectingAccounts.add(accountId);
   try {
     const session = new StringSession(sessionString);
     const client = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
-      connectionRetries: 1,
+      connectionRetries: 3,
+      retryDelay: 5000,
       useWSS: false, // TCP is more stable than WSS for long-running connections
-      autoReconnect: false, // We handle reconnects ourselves via watchdog
+      autoReconnect: true,
     });
-
-    await client.connect();
+    // First attempt
+    try {
+      await client.connect();
+    } catch (firstErr: any) {
+      const msg = String(firstErr?.message ?? firstErr ?? "");
+      if (msg.includes("AUTH_KEY_DUPLICATED")) {
+        // Another process is using this session. Disconnect the old client forcefully,
+        // wait 10 seconds for Telegram to release the key, then retry.
+        console.warn(`[Telegram] Account #${accountId} AUTH_KEY_DUPLICATED — disconnecting old session and retrying in 10s...`);
+        try { await client.disconnect(); } catch (_) {}
+        await new Promise(r => setTimeout(r, 10000));
+        await client.connect(); // second attempt after forced disconnect
+      } else {
+        throw firstErr;
+      }
+    }
     await saveSessionAndListen(accountId, client, sessionString);
   } finally {
     connectingAccounts.delete(accountId);

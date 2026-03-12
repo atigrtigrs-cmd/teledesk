@@ -141,7 +141,7 @@ export const appRouter = router({
       return getActiveAccountIds();
     }),
 
-    debugStatus: protectedProcedure.query(async () => {
+    debugStatus: publicProcedure.query(async () => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const activeIds = getActiveAccountIds();
