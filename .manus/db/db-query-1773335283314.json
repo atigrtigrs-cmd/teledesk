@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, username, syncStatus, syncedDialogs, lastSyncAt FROM telegram_accounts;\nSELECT COUNT(*) as totalDialogs FROM dialogs;\nSELECT COUNT(*) as totalMessages FROM messages;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, username, syncStatus, syncedDialogs, lastSyncAt FROM telegram_accounts;\nSELECT COUNT(*) as totalDialogs FROM dialogs;\nSELECT COUNT(*) as totalMessages FROM messages;",
+  "rows": [
+    {
+      "id": "180002",
+      "username": "affiliate_LeadCash",
+      "syncStatus": "syncing",
+      "syncedDialogs": "0",
+      "lastSyncAt": "NULL"
+    }
+  ],
+  "messages": [
+    "totalDialogs",
+    "2",
+    "totalMessages",
+    "1416"
+  ],
+  "stdout": "id\tusername\tsyncStatus\tsyncedDialogs\tlastSyncAt\n180002\taffiliate_LeadCash\tsyncing\t0\tNULL\ntotalDialogs\n2\ntotalMessages\n1416\n",
+  "stderr": "",
+  "execution_time_ms": 75
+}

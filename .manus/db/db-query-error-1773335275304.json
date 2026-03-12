@@ -1,0 +1,8 @@
+{
+  "query": "SELECT ta.id, ta.username, ta.syncStatus, ta.syncedDialogs, ta.lastSyncAt, COUNT(d.id) as dialogsInDb FROM telegram_accounts ta LEFT JOIN dialogs d ON d.accountId = ta.id GROUP BY ta.id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT ta.id, ta.username, ta.syncStatus, ta.syncedDialogs, ta.lastSyncAt, COUNT(d.id) as dialogsInDb FROM telegram_accounts ta LEFT JOIN dialogs d ON d.accountId = ta.id GROUP BY ta.id;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'd.accountid' in 'on clause'"
+  ]
+}

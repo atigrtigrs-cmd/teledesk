@@ -244,3 +244,7 @@
 - [ ] Ensure senderName is saved correctly during sync and real-time message handling
 - [x] Sync progress indicator — show synced/total dialogs with animated progress bar
 - [x] Auto-refresh Inbox dialog list every 30 seconds
+
+## Filter Supergroups from Sync (Mar 13)
+- [ ] Skip supergroups and channels in syncAccountHistory (only sync User dialogs + small groups)
+- [ ] Clean existing supergroup dialogs from DB

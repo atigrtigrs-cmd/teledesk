@@ -1,0 +1,9 @@
+{
+  "query": "DELETE m FROM messages m JOIN dialogs d ON m.dialogId = d.id JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%';\nDELETE dt FROM dialog_tags dt JOIN dialogs d ON dt.dialogId = d.id JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%';\nDELETE d FROM dialogs d JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%';\nDELETE FROM contacts WHERE telegramId LIKE 'channel_%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute DELETE m FROM messages m JOIN dialogs d ON m.dialogId = d.id JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%';\nDELETE dt FROM dialog_tags dt JOIN dialogs d ON dt.dialogId = d.id JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%';\nDELETE d FROM dialogs d JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%';\nDELETE FROM contacts WHERE telegramId LIKE 'channel_%';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 205
+}

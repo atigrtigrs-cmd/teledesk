@@ -666,8 +666,8 @@ async function syncAccountHistory(
           contactTelegramId = `group_${entity.id}`;
           contactName = entity.title ?? `Group ${entity.id}`;
         } else if (entity.className === "Channel") {
-          contactTelegramId = `channel_${entity.id}`;
-          contactName = entity.title ?? `Channel ${entity.id}`;
+          // Skip supergroups (megagroup) and broadcast channels — only personal dialogs + small groups
+          continue;
         } else {
           continue;
         }
