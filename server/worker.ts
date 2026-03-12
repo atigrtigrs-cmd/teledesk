@@ -815,6 +815,7 @@ async function syncAccountHistory(
           }
         }
 
+        // Always update lastMessageAt/lastMessageText from DB (covers case where all messages already existed)
         if (lastMsgAt) {
           await db
             .update(dialogs)
@@ -823,6 +824,23 @@ async function syncAccountHistory(
               lastMessageAt: lastMsgAt,
             })
             .where(eq(dialogs.id, dialogId));
+        } else {
+          // No new messages inserted — update from existing messages in DB
+          const [latestMsg] = await db
+            .select({ createdAt: messages.createdAt, text: messages.text })
+            .from(messages)
+            .where(eq(messages.dialogId, dialogId))
+            .orderBy(desc(messages.createdAt))
+            .limit(1);
+          if (latestMsg) {
+            await db
+              .update(dialogs)
+              .set({
+                lastMessageText: latestMsg.text?.substring(0, 255) ?? null,
+                lastMessageAt: latestMsg.createdAt,
+              })
+              .where(eq(dialogs.id, dialogId));
+          }
         }
 
         syncedCount++;
