@@ -13,6 +13,7 @@
 import "dotenv/config";
 import http from "http";
 import { TelegramClient } from "telegram";
+import { acquireProcessLock, waitForProcessLock } from "./processLock";
 import { StringSession } from "telegram/sessions/index.js";
 import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
@@ -847,10 +848,11 @@ async function syncAccountHistory(
             const msgDateTs = Number(msgAny.date ?? 0);
             lastProcessedId = msgAny.id;
 
-            // FIX #2: if message is older than gap-fill cutoff, mark to stop after batch
+            // BUG-8 FIX: messages in a batch are ordered newest→oldest, so once we hit
+            // a message older than the cutoff, ALL subsequent ones are also older — break immediately
             if (gapFillFromTs > 0 && msgDateTs < gapFillFromTs) {
               shouldStopAfterBatch = true;
-              continue; // still process remaining messages in this batch that might be newer
+              break; // no need to iterate the rest of the batch
             }
 
             const tgMsgId = String(msgAny.id);
@@ -941,6 +943,16 @@ async function syncAccountHistory(
           `[Worker] Synced dialog with ${contactName} (${contactTelegramId}), dialogId=#${dialogId}`
         );
 
+        // BUG-7 FIX: update syncedDialogs incrementally every 100 dialogs so progress
+        // is visible in UI and not lost if sync crashes mid-way
+        if (syncedCount % 100 === 0) {
+          await db
+            .update(telegramAccounts)
+            .set({ syncedDialogs: syncedCount })
+            .where(eq(telegramAccounts.id, accountId))
+            .catch(() => {});
+        }
+
         await new Promise((r) => setTimeout(r, 50));
       } catch (err) {
         console.error(`[Worker] Error syncing dialog:`, err);
@@ -1026,15 +1038,17 @@ async function main(): Promise<void> {
   console.log(`[Worker] PID: ${process.pid}`);
   console.log(`[Worker] NODE_ENV: ${process.env.NODE_ENV}`);
 
-  // FIX #startup: Wait for old server instance to shut down during Render zero-downtime deploys.
-  // Render keeps the old instance alive for ~30s after the new one starts.
-  // We wait 90s to ensure the old instance has fully disconnected its Telegram sessions
-  // before we try to connect — this prevents AUTH_KEY_DUPLICATED errors.
+  // BUG-1 FIX: wire processLock — wait for old instance to release Telegram sessions
+  // processLock.ts was created but never imported. Now we actually use it.
+  acquireProcessLock();
   if (process.env.NODE_ENV === "production") {
-    const STARTUP_DELAY_MS = 90 * 1000;
-    console.log(`[Worker] Waiting ${STARTUP_DELAY_MS / 1000}s for old instance to shut down (Render zero-downtime deploy grace period)...`);
-    await new Promise((r) => setTimeout(r, STARTUP_DELAY_MS));
-    console.log("[Worker] Grace period done. Restoring Telegram sessions...");
+    console.log("[Worker] Waiting for any previous instance to release Telegram sessions...");
+    const clear = await waitForProcessLock(3 * 60 * 1000);
+    if (clear) {
+      console.log("[Worker] Lock acquired — safe to connect Telegram sessions.");
+    } else {
+      console.warn("[Worker] Lock timed out — proceeding anyway (risk of AUTH_KEY_DUPLICATED).");
+    }
   }
 
   // Initial session restore

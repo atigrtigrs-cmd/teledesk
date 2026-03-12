@@ -253,3 +253,17 @@
 - [x] Move Worker startup into main Express server process (fix AUTH_KEY_DUPLICATED on Render)
 - [x] Remove separate background worker service from Render
 - [ ] Verify sync starts automatically after deploy
+
+## Full Code Audit — 12 Bug Fixes (Mar 12)
+- [x] BUG-1: processLock.ts is dead code — not imported anywhere, wire it into worker.ts main()
+- [x] BUG-2: messages.send race condition — returns last msg from entire table, not this dialog
+- [x] BUG-3: dialogs.list has no LIMIT — loads all dialogs into memory, add SQL LIMIT 500 + push filters to SQL
+- [x] BUG-4: Raw SQL uses dialog_id/tag_id (snake_case) but actual columns are dialogId/tagId (camelCase)
+- [x] BUG-5: analytics.accountStats — N+1 × 6 queries per account, consolidate into 3 bulk queries
+- [x] BUG-6: analytics.managerStats — N+1 × 5 queries per manager, consolidate into 2 bulk queries
+- [x] BUG-7: syncAccountHistory — syncedDialogs only updated at end, add incremental update every 100 dialogs
+- [x] BUG-8: shouldStopAfterBatch uses continue instead of break — changed to break immediately
+- [x] BUG-9: messages.send firstResponseAt check includes just-inserted message — moved check BEFORE insert
+- [x] BUG-10: SSE /api/events has no auth — added JWT cookie verification before allowing subscription
+- [x] BUG-11: broadcast uses 50ms delay which is too aggressive — changed to 100ms + retry_after backoff on 429
+- [x] BUG-12: workingHours.upsert does N+1 SELECT+UPDATE/INSERT per day — replaced with INSERT...ON DUPLICATE KEY UPDATE

@@ -9,6 +9,7 @@
  */
 
 import type { Request, Response } from "express";
+import { verifyToken, AUTH_COOKIE_NAME } from "./authService";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,16 @@ export function emitInboxEvent(event: InboxEvent): void {
 
 // ─── SSE HTTP handler (register as GET /api/events) ──────────────────────────
 
-export function sseHandler(req: Request, res: Response): void {
+export async function sseHandler(req: Request, res: Response): Promise<void> {
+  // BUG-10 FIX: require valid session cookie before allowing SSE subscription
+  // Previously: any unauthenticated user could subscribe and receive all inbox events
+  const token = (req as any).cookies?.[AUTH_COOKIE_NAME];
+  const payload = token ? await verifyToken(token) : null;
+  if (!payload) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
