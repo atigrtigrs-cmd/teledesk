@@ -1,0 +1,19 @@
+{
+  "query": "SET FOREIGN_KEY_CHECKS = 0;\nDELETE FROM messages WHERE dialogId IN (SELECT id FROM (SELECT d.id FROM dialogs d JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%') AS tmp);\nDELETE FROM dialog_tags WHERE dialogId IN (SELECT id FROM (SELECT d.id FROM dialogs d JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%') AS tmp);\nDELETE FROM dialogs WHERE id IN (SELECT id FROM (SELECT d.id FROM dialogs d JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%') AS tmp);\nDELETE FROM contacts WHERE telegramId LIKE 'channel_%' OR telegramId LIKE 'group_%';\nSET FOREIGN_KEY_CHECKS = 1;\nSELECT COUNT(*) as dialogs FROM dialogs;\nSELECT COUNT(*) as contacts FROM contacts;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SET FOREIGN_KEY_CHECKS = 0;\nDELETE FROM messages WHERE dialogId IN (SELECT id FROM (SELECT d.id FROM dialogs d JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%') AS tmp);\nDELETE FROM dialog_tags WHERE dialogId IN (SELECT id FROM (SELECT d.id FROM dialogs d JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%') AS tmp);\nDELETE FROM dialogs WHERE id IN (SELECT id FROM (SELECT d.id FROM dialogs d JOIN contacts c ON d.contactId = c.id WHERE c.telegramId LIKE 'channel_%' OR c.telegramId LIKE 'group_%') AS tmp);\nDELETE FROM contacts WHERE telegramId LIKE 'channel_%' OR telegramId LIKE 'group_%';\nSET FOREIGN_KEY_CHECKS = 1;\nSELECT COUNT(*) as dialogs FROM dialogs;\nSELECT COUNT(*) as contacts FROM contacts;",
+  "rows": [
+    {
+      "dialogs": "12"
+    },
+    {
+      "dialogs": "contacts"
+    },
+    {
+      "dialogs": "717"
+    }
+  ],
+  "messages": [],
+  "stdout": "dialogs\n12\ncontacts\n717\n",
+  "stderr": "",
+  "execution_time_ms": 283
+}
