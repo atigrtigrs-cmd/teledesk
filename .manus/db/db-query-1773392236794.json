@@ -1,0 +1,31 @@
+{
+  "query": "SELECT COUNT(*) as total_contacts FROM contacts; SELECT COUNT(*) as total_dialogs FROM dialogs; SELECT COUNT(*) as total_messages FROM messages; SELECT id, username, telegramId, status, syncedDialogs, totalTgDialogs FROM telegram_accounts WHERE telegramId = '7480546401' OR username = 'affiliate_LeadCash' LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT COUNT(*) as total_contacts FROM contacts; SELECT COUNT(*) as total_dialogs FROM dialogs; SELECT COUNT(*) as total_messages FROM messages; SELECT id, username, telegramId, status, syncedDialogs, totalTgDialogs FROM telegram_accounts WHERE telegramId = '7480546401' OR username = 'affiliate_LeadCash' LIMIT 5;",
+  "rows": [
+    {
+      "total_contacts": "833"
+    },
+    {
+      "total_contacts": "total_dialogs"
+    },
+    {
+      "total_contacts": "16"
+    },
+    {
+      "total_contacts": "total_messages"
+    },
+    {
+      "total_contacts": "63077"
+    },
+    {
+      "total_contacts": "id\tusername\ttelegramId\tstatus\tsyncedDialogs\ttotalTgDialogs"
+    },
+    {
+      "total_contacts": "180015\taffiliate_LeadCash\t7480546401\tactive\t0\t865"
+    }
+  ],
+  "messages": [],
+  "stdout": "total_contacts\n833\ntotal_dialogs\n16\ntotal_messages\n63077\nid\tusername\ttelegramId\tstatus\tsyncedDialogs\ttotalTgDialogs\n180015\taffiliate_LeadCash\t7480546401\tactive\t0\t865\n",
+  "stderr": "",
+  "execution_time_ms": 247
+}

@@ -1,0 +1,16 @@
+{
+  "query": "SELECT (SELECT COUNT(*) FROM contacts) as contacts_count, (SELECT COUNT(*) FROM dialogs) as dialogs_count, (SELECT COUNT(*) FROM messages) as messages_count, (SELECT id FROM telegram_accounts WHERE telegramId = '7480546401' LIMIT 1) as account_id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT (SELECT COUNT(*) FROM contacts) as contacts_count, (SELECT COUNT(*) FROM dialogs) as dialogs_count, (SELECT COUNT(*) FROM messages) as messages_count, (SELECT id FROM telegram_accounts WHERE telegramId = '7480546401' LIMIT 1) as account_id;",
+  "rows": [
+    {
+      "contacts_count": "833",
+      "dialogs_count": "17",
+      "messages_count": "63288",
+      "account_id": "180015"
+    }
+  ],
+  "messages": [],
+  "stdout": "contacts_count\tdialogs_count\tmessages_count\taccount_id\n833\t17\t63288\t180015\n",
+  "stderr": "",
+  "execution_time_ms": 88
+}
