@@ -13,7 +13,7 @@
 import "dotenv/config";
 import http from "http";
 import { TelegramClient } from "telegram";
-import { acquireProcessLock, releaseProcessLock } from "./processLock";
+// processLock removed — using simple startup delay instead
 import { StringSession } from "telegram/sessions/index.js";
 import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
@@ -1077,15 +1077,13 @@ async function main(): Promise<void> {
   console.log(`[Worker] PID: ${process.pid}`);
   console.log(`[Worker] NODE_ENV: ${process.env.NODE_ENV}`);
 
-  // DB-based distributed lock: wait for old Render instance to release sessions
-  // /tmp is not shared between Render containers, so we use MySQL as the lock store
-  console.log("[Worker] Acquiring distributed process lock (DB-based)...");
-  const lockAcquired = await acquireProcessLock(3 * 60 * 1000);
-  if (lockAcquired) {
-    console.log("[Worker] Lock acquired — safe to connect Telegram sessions.");
-  } else {
-    console.warn("[Worker] Lock timed out — proceeding anyway (risk of AUTH_KEY_DUPLICATED).");
-  }
+  // Simple startup delay: wait 60s for old Render instance to fully die.
+  // Distributed lock approach caused deadlocks because Render kills the new instance
+  // if it doesn't respond to health checks while waiting for the lock.
+  const STARTUP_DELAY_MS = 60 * 1000;
+  console.log(`[Worker] Waiting ${STARTUP_DELAY_MS / 1000}s for old instance to die before connecting to Telegram...`);
+  await new Promise((r) => setTimeout(r, STARTUP_DELAY_MS));
+  console.log("[Worker] Startup delay complete — safe to connect Telegram sessions.");
 
   // Initial session restore
   await restoreAllSessions();
