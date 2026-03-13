@@ -86,13 +86,14 @@ async function connectAccount(
   }
 
   connectingAccounts.add(accountId);
+  let client: TelegramClient | null = null;
   try {
     const session = new StringSession(sessionString);
-    const client = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
-      connectionRetries: 5,
+    client = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
+      connectionRetries: 3,
       retryDelay: 3000,
       useWSS: true,
-      autoReconnect: true,
+      autoReconnect: false, // Disable auto-reconnect during initial connect to prevent AUTH_KEY_DUPLICATED loops
       deviceModel: "LeadCash Connect Worker",
       appVersion: "1.0",
       langCode: "ru",
@@ -100,6 +101,9 @@ async function connectAccount(
 
     console.log(`[Worker] Account #${accountId} connecting...`);
     await client.connect();
+
+    // Enable auto-reconnect only after successful initial connection
+    (client as any)._autoReconnect = true;
 
     // Get account info from Telegram
     let myTelegramId: string | null = null;
@@ -175,28 +179,22 @@ async function connectAccount(
         .where(eq(telegramAccounts.id, accountId));
     }
 
-    // FIX #1 (AUTH_KEY_DUPLICATED): old server instance still running — wait and retry.
-    // Don't mark as disconnected — just schedule a retry after old instance dies.
-    // Set cooldown to prevent pollForNewAccounts from retrying immediately.
+    // FIX #1 (AUTH_KEY_DUPLICATED): old server instance still running.
+    // Set cooldown — pollForNewAccounts will retry after cooldown expires.
+    // No setTimeout retry — avoids cascading retry loops.
     if (msg.includes("AUTH_KEY_DUPLICATED")) {
       setCooldown(accountId, 120 * 1000);
-      console.log(`[Worker] AUTH_KEY_DUPLICATED for account #${accountId} — cooldown set for 120s, will retry after...`);
-      setTimeout(async () => {
-        if (!activeClients.has(accountId) && !connectingAccounts.has(accountId)) {
-          console.log(`[Worker] Retrying connection for account #${accountId} after AUTH_KEY_DUPLICATED delay...`);
-          const [acc] = await db
-            .select()
-            .from(telegramAccounts)
-            .where(eq(telegramAccounts.id, accountId))
-            .limit(1)
-            .catch(() => [null as any]);
-          if (acc?.sessionString) {
-            connectAccount(accountId, acc.sessionString).catch((e) =>
-              console.error(`[Worker] Retry connect failed for #${accountId}: ${e?.message ?? e}`)
-            );
-          }
-        }
-      }, 120 * 1000);
+      console.log(`[Worker] AUTH_KEY_DUPLICATED for account #${accountId} — cooldown set for 120s. pollForNewAccounts will retry after.`);
+    }
+
+    // Disconnect the gramjs client to stop its internal reconnect loop
+    if (client) {
+      try {
+        await client.disconnect();
+        console.log(`[Worker] Disconnected failed client for account #${accountId}`);
+      } catch (disconnectErr) {
+        // Ignore disconnect errors
+      }
     }
 
     throw err;
