@@ -35,6 +35,28 @@ function getDb() {
 }
 
 /**
+ * Ensure the process_locks table exists (create if not exists).
+ * This handles production DBs that haven't run the migration yet.
+ */
+export async function ensureProcessLocksTable(): Promise<void> {
+  const db = getDb();
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS process_locks (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        lockName VARCHAR(64) NOT NULL UNIQUE,
+        instanceId VARCHAR(128) NOT NULL,
+        acquiredAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expiresAt TIMESTAMP NOT NULL
+      )
+    `);
+    console.log("[ProcessLock] process_locks table ready");
+  } catch (err) {
+    console.error("[ProcessLock] Failed to create process_locks table:", err);
+  }
+}
+
+/**
  * Try to acquire the distributed lock.
  * Returns true if we hold the lock, false if another instance holds it.
  */
@@ -97,6 +119,9 @@ async function tryAcquireLock(): Promise<boolean> {
  * Call this before starting MTProto connections.
  */
 export async function acquireProcessLock(timeoutMs = 3 * 60 * 1000): Promise<boolean> {
+  // Ensure table exists first (handles production DBs without migration)
+  await ensureProcessLocksTable();
+
   const deadline = Date.now() + timeoutMs;
   let waited = 0;
 
