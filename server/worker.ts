@@ -949,7 +949,25 @@ async function syncAccountHistory(
         }
 
         await new Promise((r) => setTimeout(r, 50));
-      } catch (err) {
+      } catch (err: any) {
+        const errMsg = String(err?.message ?? err ?? "");
+        // AUTH_KEY_DUPLICATED means old server instance is still alive — abort sync entirely
+        if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
+          console.log(`[Worker] AUTH_KEY_DUPLICATED during sync for account #${accountId} — aborting sync, will retry after reconnect`);
+          await db
+            .update(telegramAccounts)
+            .set({ syncStatus: "idle", lastError: "AUTH_KEY_DUPLICATED — retrying after reconnect" })
+            .where(eq(telegramAccounts.id, accountId));
+          // Disconnect and reschedule reconnect after 120s
+          activeClients.delete(accountId);
+          setTimeout(async () => {
+            const [acc] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, accountId)).limit(1).catch(() => [null as any]);
+            if (acc?.sessionString && !activeClients.has(accountId)) {
+              connectAccount(accountId, acc.sessionString).catch(() => {});
+            }
+          }, 120 * 1000);
+          return;
+        }
         console.error(`[Worker] Error syncing dialog:`, err);
       }
     }
@@ -969,6 +987,14 @@ async function syncAccountHistory(
   } catch (err: any) {
     const errMsg = String(err?.message ?? err ?? "");
     console.error(`[Worker] Fatal sync error for account #${accountId}:`, err);
+    // AUTH_KEY_DUPLICATED at top level — reschedule
+    if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
+      await db
+        .update(telegramAccounts)
+        .set({ syncStatus: "idle", lastError: "AUTH_KEY_DUPLICATED — retrying after reconnect" })
+        .where(eq(telegramAccounts.id, accountId));
+      return;
+    }
     await db
       .update(telegramAccounts)
       .set({ syncStatus: "error", lastError: errMsg.substring(0, 500) })
