@@ -53,6 +53,23 @@ const activeClients = new Map<number, TelegramClient>();
 // Set of accountIds currently being connected (prevent parallel attempts)
 const connectingAccounts = new Set<number>();
 
+// Cooldown map: accountId → timestamp when cooldown expires (prevents retry spam after AUTH_KEY_DUPLICATED)
+const connectionCooldown = new Map<number, number>();
+
+function isInCooldown(accountId: number): boolean {
+  const until = connectionCooldown.get(accountId);
+  if (!until) return false;
+  if (Date.now() >= until) {
+    connectionCooldown.delete(accountId);
+    return false;
+  }
+  return true;
+}
+
+function setCooldown(accountId: number, durationMs: number): void {
+  connectionCooldown.set(accountId, Date.now() + durationMs);
+}
+
 // ─── Connect a single account ─────────────────────────────────────────────────
 
 async function connectAccount(
@@ -160,8 +177,10 @@ async function connectAccount(
 
     // FIX #1 (AUTH_KEY_DUPLICATED): old server instance still running — wait and retry.
     // Don't mark as disconnected — just schedule a retry after old instance dies.
+    // Set cooldown to prevent pollForNewAccounts from retrying immediately.
     if (msg.includes("AUTH_KEY_DUPLICATED")) {
-      console.log(`[Worker] AUTH_KEY_DUPLICATED for account #${accountId} — old instance still alive. Will retry in 120s...`);
+      setCooldown(accountId, 120 * 1000);
+      console.log(`[Worker] AUTH_KEY_DUPLICATED for account #${accountId} — cooldown set for 120s, will retry after...`);
       setTimeout(async () => {
         if (!activeClients.has(accountId) && !connectingAccounts.has(accountId)) {
           console.log(`[Worker] Retrying connection for account #${accountId} after AUTH_KEY_DUPLICATED delay...`);
@@ -276,6 +295,7 @@ async function pollForNewAccounts(): Promise<void> {
       if (!acc.sessionString) continue;
       if (activeClients.has(acc.id)) continue;
       if (connectingAccounts.has(acc.id)) continue;
+      if (isInCooldown(acc.id)) continue; // Skip accounts in AUTH_KEY_DUPLICATED cooldown
 
       console.log(
         `[Worker] New account detected: #${acc.id} (@${acc.username}) — connecting...`
@@ -1099,6 +1119,7 @@ async function main(): Promise<void> {
       if (!acc.sessionString) continue;
       if (activeClients.has(acc.id)) continue;
       if (connectingAccounts.has(acc.id)) continue;
+      if (isInCooldown(acc.id)) continue; // Skip accounts in AUTH_KEY_DUPLICATED cooldown
       // FIX #7: don't try to reconnect permanently disconnected accounts
       if (acc.status === "banned") continue;
       // Don't reconnect if last error was permanent
