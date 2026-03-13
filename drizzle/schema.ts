@@ -186,6 +186,17 @@ export const workingHours = mysqlTable("working_hours", {
 export type WorkingHours = typeof workingHours.$inferSelect;
 export type InsertWorkingHours = typeof workingHours.$inferInsert;
 
+// ─── Process Locks (distributed lock for Render zero-downtime deploys) ─────────
+export const processLocks = mysqlTable("process_locks", {
+  id: int("id").autoincrement().primaryKey(),
+  lockName: varchar("lockName", { length: 64 }).notNull().unique(),
+  instanceId: varchar("instanceId", { length: 128 }).notNull(), // random UUID per process
+  acquiredAt: timestamp("acquiredAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(), // TTL to auto-expire stale locks
+});
+
+export type ProcessLock = typeof processLocks.$inferSelect;
+
 // ─── Dialog Tags (junction) ─────────────────────────────────────────────────────
 export const dialogTags = mysqlTable("dialog_tags", {
   id: int("id").autoincrement().primaryKey(),

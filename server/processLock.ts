@@ -7,108 +7,174 @@
  * while the new process starts. Both processes try to use the same MTProto session
  * strings → AUTH_KEY_DUPLICATED.
  *
- * Solution: Write our PID to /tmp/teledesk-tg.lock on startup.
- * Before connecting MTProto, check if another PID is in the lock file and is alive.
- * If yes — wait up to 3 minutes for it to die before proceeding.
+ * Solution: Use the shared MySQL database as a distributed lock.
+ * Each process has a random instanceId (UUID). On startup, we try to INSERT or
+ * UPDATE the lock row. If another instance holds it and hasn't expired, we wait.
+ * The lock has a TTL (heartbeat) — we refresh it every 30s. If a process dies
+ * without releasing, the lock expires after 2 minutes and the next process takes over.
  */
 
-import fs from "fs";
-import path from "path";
+import crypto from "crypto";
+import { drizzle } from "drizzle-orm/mysql2";
+import { eq, lt, sql } from "drizzle-orm";
+import { processLocks } from "../drizzle/schema";
 import { disconnectAll } from "./telegram";
 
-const LOCK_FILE = "/tmp/teledesk-tg.lock";
-const MY_PID = process.pid;
+const LOCK_NAME = "telegram-worker";
+const LOCK_TTL_MS = 2 * 60 * 1000; // 2 minutes TTL
+const HEARTBEAT_INTERVAL_MS = 30 * 1000; // refresh every 30s
+const WAIT_INTERVAL_MS = 5 * 1000; // check every 5s
 
-/**
- * Write our PID to the lock file.
- * Call this once at server startup (before restoreAllSessions).
- */
-export function acquireProcessLock(): void {
-  try {
-    fs.writeFileSync(LOCK_FILE, String(MY_PID), "utf8");
-    console.log(`[ProcessLock] Acquired lock (PID=${MY_PID})`);
-  } catch (err) {
-    console.error("[ProcessLock] Failed to write lock file:", err);
-  }
+export const MY_INSTANCE_ID = crypto.randomUUID();
+
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+function getDb() {
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL not set");
+  return drizzle(process.env.DATABASE_URL);
 }
 
 /**
- * Check if another process currently holds the lock.
- * Returns the other PID if it's alive, or null if we're the only process.
+ * Try to acquire the distributed lock.
+ * Returns true if we hold the lock, false if another instance holds it.
  */
-function getOtherAlivePid(): number | null {
+async function tryAcquireLock(): Promise<boolean> {
+  const db = getDb();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + LOCK_TTL_MS);
+
   try {
-    if (!fs.existsSync(LOCK_FILE)) return null;
-    const content = fs.readFileSync(LOCK_FILE, "utf8").trim();
-    const pid = parseInt(content, 10);
-    if (isNaN(pid) || pid === MY_PID) return null;
-
-    // Check if the process is alive by sending signal 0
-    try {
-      process.kill(pid, 0);
-      return pid; // process is alive
-    } catch {
-      return null; // process is dead
-    }
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Wait until no other process holds the lock, or until timeout.
- * Call this before starting MTProto connections.
- *
- * @param timeoutMs Max time to wait (default: 3 minutes)
- * @returns true if we're clear to proceed, false if timed out
- */
-export async function waitForProcessLock(timeoutMs = 3 * 60 * 1000): Promise<boolean> {
-  const otherPid = getOtherAlivePid();
-  if (!otherPid) {
-    console.log(`[ProcessLock] No other process holding lock — proceeding (PID=${MY_PID})`);
+    // Try to insert a new lock row (will fail if lockName already exists)
+    await db.insert(processLocks).values({
+      lockName: LOCK_NAME,
+      instanceId: MY_INSTANCE_ID,
+      acquiredAt: now,
+      expiresAt,
+    });
+    console.log(`[ProcessLock] Acquired new lock (instanceId=${MY_INSTANCE_ID})`);
     return true;
+  } catch {
+    // Lock row already exists — check if it's ours or expired
+    const [existing] = await db
+      .select()
+      .from(processLocks)
+      .where(eq(processLocks.lockName, LOCK_NAME))
+      .limit(1);
+
+    if (!existing) {
+      // Race condition: row was deleted between our INSERT and SELECT — retry
+      return tryAcquireLock();
+    }
+
+    if (existing.instanceId === MY_INSTANCE_ID) {
+      // We already hold it (e.g. called twice)
+      return true;
+    }
+
+    // Check if the lock has expired
+    if (existing.expiresAt < now) {
+      // Expired — take it over with UPDATE
+      const result = await db
+        .update(processLocks)
+        .set({ instanceId: MY_INSTANCE_ID, acquiredAt: now, expiresAt })
+        .where(eq(processLocks.lockName, LOCK_NAME));
+      const affected = (result as any)[0]?.affectedRows ?? 0;
+      if (affected > 0) {
+        console.log(`[ProcessLock] Took over expired lock (instanceId=${MY_INSTANCE_ID})`);
+        return true;
+      }
+      // Another process beat us to it — retry
+      return false;
+    }
+
+    // Another live instance holds the lock
+    return false;
   }
+}
 
-  console.log(`[ProcessLock] Another process (PID=${otherPid}) is holding the lock. Waiting up to ${timeoutMs / 1000}s for it to die...`);
-
+/**
+ * Acquire the distributed lock, waiting up to timeoutMs for it to be released.
+ * Call this before starting MTProto connections.
+ */
+export async function acquireProcessLock(timeoutMs = 3 * 60 * 1000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let waited = 0;
 
   while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 5000)); // check every 5s
-    waited += 5;
-    const stillAlive = getOtherAlivePid();
-    if (!stillAlive) {
-      console.log(`[ProcessLock] Other process died after ~${waited}s — acquiring lock and proceeding`);
-      // Re-write our PID to the lock file
-      acquireProcessLock();
+    const acquired = await tryAcquireLock().catch((err) => {
+      console.error("[ProcessLock] DB error during lock attempt:", err);
+      return false;
+    });
+
+    if (acquired) {
+      // Start heartbeat to keep lock alive
+      startHeartbeat();
       return true;
     }
-    console.log(`[ProcessLock] Still waiting for PID=${otherPid} to die... (${waited}s elapsed)`);
+
+    // Check who holds the lock
+    const db = getDb();
+    const [existing] = await db
+      .select()
+      .from(processLocks)
+      .where(eq(processLocks.lockName, LOCK_NAME))
+      .limit(1)
+      .catch(() => [null as any]);
+
+    if (existing) {
+      const expiresIn = Math.round((existing.expiresAt.getTime() - Date.now()) / 1000);
+      console.log(
+        `[ProcessLock] Lock held by instanceId=${existing.instanceId} (expires in ${expiresIn}s). Waiting... (${waited}s elapsed)`
+      );
+    }
+
+    await new Promise((r) => setTimeout(r, WAIT_INTERVAL_MS));
+    waited += WAIT_INTERVAL_MS / 1000;
   }
 
-  console.warn(`[ProcessLock] Timed out waiting for PID=${otherPid} — proceeding anyway (risk of AUTH_KEY_DUPLICATED)`);
-  acquireProcessLock();
+  console.warn(`[ProcessLock] Timed out waiting for lock — proceeding anyway (risk of AUTH_KEY_DUPLICATED)`);
   return false;
+}
+
+/**
+ * Start a heartbeat to refresh the lock TTL every 30s.
+ */
+function startHeartbeat(): void {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = setInterval(async () => {
+    try {
+      const db = getDb();
+      const expiresAt = new Date(Date.now() + LOCK_TTL_MS);
+      await db
+        .update(processLocks)
+        .set({ expiresAt })
+        .where(eq(processLocks.lockName, LOCK_NAME));
+    } catch (err) {
+      console.error("[ProcessLock] Heartbeat failed:", err);
+    }
+  }, HEARTBEAT_INTERVAL_MS);
 }
 
 /**
  * Release the lock on process exit.
  */
-export function releaseProcessLock(): void {
+export async function releaseProcessLock(): Promise<void> {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
   try {
-    const content = fs.existsSync(LOCK_FILE) ? fs.readFileSync(LOCK_FILE, "utf8").trim() : "";
-    if (content === String(MY_PID)) {
-      fs.unlinkSync(LOCK_FILE);
-      console.log(`[ProcessLock] Released lock (PID=${MY_PID})`);
-    }
+    const db = getDb();
+    await db
+      .delete(processLocks)
+      .where(eq(processLocks.lockName, LOCK_NAME));
+    console.log(`[ProcessLock] Released lock (instanceId=${MY_INSTANCE_ID})`);
   } catch {
     // ignore
   }
 }
 
 // Auto-release on process exit — also disconnect all MTProto clients so Telegram releases sessions
-process.on("exit", releaseProcessLock);
 process.on("SIGTERM", async () => {
   console.log("[ProcessLock] SIGTERM received — disconnecting all Telegram clients before exit...");
   try {
@@ -116,7 +182,7 @@ process.on("SIGTERM", async () => {
   } catch (err) {
     console.error("[ProcessLock] Error during disconnectAll on SIGTERM:", err);
   }
-  releaseProcessLock();
+  await releaseProcessLock();
   process.exit(0);
 });
 process.on("SIGINT", async () => {
@@ -126,6 +192,6 @@ process.on("SIGINT", async () => {
   } catch (err) {
     console.error("[ProcessLock] Error during disconnectAll on SIGINT:", err);
   }
-  releaseProcessLock();
+  await releaseProcessLock();
   process.exit(0);
 });

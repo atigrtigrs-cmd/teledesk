@@ -13,7 +13,7 @@
 import "dotenv/config";
 import http from "http";
 import { TelegramClient } from "telegram";
-import { acquireProcessLock, waitForProcessLock } from "./processLock";
+import { acquireProcessLock, releaseProcessLock } from "./processLock";
 import { StringSession } from "telegram/sessions/index.js";
 import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
@@ -1059,17 +1059,14 @@ async function main(): Promise<void> {
   console.log(`[Worker] PID: ${process.pid}`);
   console.log(`[Worker] NODE_ENV: ${process.env.NODE_ENV}`);
 
-  // BUG-1 FIX: wire processLock — wait for old instance to release Telegram sessions
-  // processLock.ts was created but never imported. Now we actually use it.
-  acquireProcessLock();
-  if (process.env.NODE_ENV === "production") {
-    console.log("[Worker] Waiting for any previous instance to release Telegram sessions...");
-    const clear = await waitForProcessLock(3 * 60 * 1000);
-    if (clear) {
-      console.log("[Worker] Lock acquired — safe to connect Telegram sessions.");
-    } else {
-      console.warn("[Worker] Lock timed out — proceeding anyway (risk of AUTH_KEY_DUPLICATED).");
-    }
+  // DB-based distributed lock: wait for old Render instance to release sessions
+  // /tmp is not shared between Render containers, so we use MySQL as the lock store
+  console.log("[Worker] Acquiring distributed process lock (DB-based)...");
+  const lockAcquired = await acquireProcessLock(3 * 60 * 1000);
+  if (lockAcquired) {
+    console.log("[Worker] Lock acquired — safe to connect Telegram sessions.");
+  } else {
+    console.warn("[Worker] Lock timed out — proceeding anyway (risk of AUTH_KEY_DUPLICATED).");
   }
 
   // Initial session restore
