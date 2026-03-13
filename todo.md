@@ -339,6 +339,17 @@
 - [x] All 20 vitest tests passing
 
 ## Deploy UI Redesign to Render (Mar 13, 2026)
-- [ ] Push updated code to GitHub
-- [ ] Trigger deploy on Render
-- [ ] Verify deployment
+- [x] Push updated code to GitHub
+- [x] Trigger deploy on Render
+- [x] Verify deployment — status: live
+
+## Telegram Avatars in Dialogs (Mar 13, 2026)
+- [x] Add avatarUrl column to contacts table (already existed in schema)
+- [x] Download contact profile photos during sync (via GramJS downloadProfilePhoto)
+- [x] Upload photos to S3 and store URL in contacts.avatarUrl
+- [x] Update dialogs.list and dialogs.get to return avatarUrl (already included via full contact join)
+- [x] Update Messages page: show real avatar in dialog list, chat header, contact panel
+- [x] Update Contacts page: show real avatar
+- [x] Fallback to colored initials when no avatar (AvatarWithFallback component)
+- [x] All 23 tests passing
+- [ ] Push to GitHub and deploy to Render

@@ -97,9 +97,27 @@ export default function ContactsPage() {
                   key={c.id}
                   className="px-4 py-2.5 flex items-center gap-3 hover:bg-muted/20 transition-colors border-b border-border/30"
                 >
-                  <div className={`h-9 w-9 rounded-full ${color} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
-                    {name.charAt(0).toUpperCase()}
-                  </div>
+                  {c.avatarUrl ? (
+                    <div className="relative shrink-0">
+                      <img
+                        src={c.avatarUrl}
+                        alt={name}
+                        className="h-9 w-9 rounded-full object-cover"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                          const fb = e.currentTarget.nextElementSibling as HTMLElement;
+                          if (fb) fb.style.display = "flex";
+                        }}
+                      />
+                      <div className={`h-9 w-9 rounded-full ${color} items-center justify-center text-white text-sm font-bold`} style={{ display: "none" }}>
+                        {name.charAt(0).toUpperCase()}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={`h-9 w-9 rounded-full ${color} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
+                      {name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{name}</p>
                     <div className="flex items-center gap-2 mt-0.5">

@@ -125,6 +125,77 @@ function isSameDay(a: Date | string, b: Date | string): boolean {
   return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
 }
 
+// ─── Avatar Component ──────────────────────────────────────────────────────
+function ContactAvatar({ contact, name, size = "sm" }: {
+  contact: { avatarUrl?: string | null; firstName?: string | null; lastName?: string | null; username?: string | null } | null | undefined;
+  name: string;
+  size?: "sm" | "md" | "lg";
+}) {
+  const avatarUrl = contact?.avatarUrl;
+  const avatarColor = getAvatarColor(name);
+  const sizeClasses = size === "lg" ? "h-14 w-14 text-xl" : size === "md" ? "h-9 w-9 text-sm" : "h-8 w-8 text-sm";
+
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        className={`${sizeClasses} rounded-full object-cover shrink-0`}
+        onError={(e) => {
+          // Fallback to initials on load error
+          const target = e.currentTarget;
+          target.style.display = "none";
+          target.nextElementSibling?.classList.remove("hidden");
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className={`${sizeClasses} rounded-full ${avatarColor} flex items-center justify-center text-white font-bold shrink-0`}>
+      {name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
+// Wrapper that shows img with hidden fallback div
+function AvatarWithFallback({ contact, name, size = "sm", className = "" }: {
+  contact: { avatarUrl?: string | null; firstName?: string | null; lastName?: string | null; username?: string | null } | null | undefined;
+  name: string;
+  size?: "sm" | "md" | "lg";
+  className?: string;
+}) {
+  const avatarUrl = contact?.avatarUrl;
+  const avatarColor = getAvatarColor(name);
+  const sizeClasses = size === "lg" ? "h-14 w-14 text-xl" : size === "md" ? "h-9 w-9 text-sm" : "h-8 w-8 text-sm";
+
+  return (
+    <div className={`relative shrink-0 ${className}`}>
+      {avatarUrl ? (
+        <>
+          <img
+            src={avatarUrl}
+            alt={name}
+            className={`${sizeClasses} rounded-full object-cover`}
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+              const fb = e.currentTarget.nextElementSibling as HTMLElement;
+              if (fb) fb.style.display = "flex";
+            }}
+          />
+          <div className={`${sizeClasses} rounded-full ${avatarColor} items-center justify-center text-white font-bold`} style={{ display: "none" }}>
+            {name.charAt(0).toUpperCase()}
+          </div>
+        </>
+      ) : (
+        <div className={`${sizeClasses} rounded-full ${avatarColor} flex items-center justify-center text-white font-bold`}>
+          {name.charAt(0).toUpperCase()}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 export default function Messages() {
   const { user } = useAuth();
@@ -356,9 +427,7 @@ function DialogList({
                 }`}
               >
                 {/* Avatar */}
-                <div className={`h-9 w-9 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold shrink-0 mt-0.5`}>
-                  {name.charAt(0).toUpperCase()}
-                </div>
+                <AvatarWithFallback contact={contact} name={name} size="md" className="mt-0.5" />
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
@@ -518,9 +587,7 @@ function ChatView({
           onClick={onToggleContact}
           className="flex items-center gap-2.5 flex-1 min-w-0 hover:opacity-80 transition-opacity text-left"
         >
-          <div className={`h-8 w-8 rounded-full ${avatarColor} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
-            {contactName.charAt(0).toUpperCase()}
-          </div>
+          <AvatarWithFallback contact={contact} name={contactName} size="sm" />
           <div className="min-w-0">
             <p className="font-semibold text-sm truncate">{contactName}</p>
             <div className="flex items-center gap-1.5">
@@ -800,9 +867,7 @@ function ContactPanel({ dialogId, onClose }: { dialogId: number; onClose: () => 
 
       {/* Avatar */}
       <div className="flex flex-col items-center py-5 px-4 border-b border-border">
-        <div className={`h-14 w-14 rounded-full ${avatarColor} flex items-center justify-center text-white font-bold text-xl mb-2`}>
-          {contactName.charAt(0).toUpperCase()}
-        </div>
+        <AvatarWithFallback contact={contact} name={contactName} size="lg" className="mb-2" />
         <p className="font-bold text-sm text-center">{contactName}</p>
         {contact?.username && <p className="text-xs text-muted-foreground mt-0.5">@{contact.username}</p>}
       </div>

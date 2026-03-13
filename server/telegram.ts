@@ -17,12 +17,44 @@ import { eq, and, desc, inArray, gt, isNotNull } from "drizzle-orm";
 import { createBitrixDeal, addBitrixTimelineComment } from "./bitrix";
 import { invokeLLM } from "./_core/llm";
 import { emitInboxEvent } from "./sse";
+import { storagePut } from "./storage";
 
 const TELEGRAM_API_ID = parseInt(process.env.TELEGRAM_API_ID ?? "36272545");
 const TELEGRAM_API_HASH = process.env.TELEGRAM_API_HASH ?? "c287b0998fac419b776486e511f364fc";
 
 // Map of accountId → TelegramClient
 const activeClients = new Map<number, TelegramClient>();
+
+// Cache of already-downloaded avatars to avoid re-downloading
+const avatarDownloadedSet = new Set<string>();
+
+/**
+ * Download a Telegram entity's profile photo and upload to S3.
+ * Returns the CDN URL or null if no photo / error.
+ */
+async function downloadAndStoreAvatar(
+  client: TelegramClient,
+  entity: any,
+  contactTelegramId: string
+): Promise<string | null> {
+  try {
+    if (avatarDownloadedSet.has(contactTelegramId)) return null;
+    avatarDownloadedSet.add(contactTelegramId);
+
+    const buffer = await client.downloadProfilePhoto(entity, { isBig: false });
+    if (!buffer || (Buffer.isBuffer(buffer) && buffer.length === 0)) return null;
+    // buffer can be Buffer or string path — we need Buffer
+    const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer as any);
+    if (buf.length < 100) return null; // too small, probably empty
+
+    const key = `avatars/${contactTelegramId}.jpg`;
+    const { url } = await storagePut(key, buf, "image/jpeg");
+    return url;
+  } catch (err) {
+    // Silently fail — avatar is non-critical
+    return null;
+  }
+}
 
 // Mutex to prevent parallel connection attempts for the same account
 const connectingAccounts = new Set<number>();
@@ -433,20 +465,28 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
 
         if (existingContacts.length > 0) {
           contactId = existingContacts[0].id;
+          // Download avatar if missing
+          let avatarUrl = existingContacts[0].avatarUrl;
+          if (!avatarUrl) {
+            avatarUrl = await downloadAndStoreAvatar(client, entity, contactTelegramId);
+          }
           // Update contact info
           await db.update(contacts).set({
             username: entity.username ?? existingContacts[0].username,
             firstName: entity.firstName ?? entity.title ?? existingContacts[0].firstName,
             lastName: entity.lastName ?? existingContacts[0].lastName,
             phone: entity.phone ?? existingContacts[0].phone,
+            ...(avatarUrl && !existingContacts[0].avatarUrl ? { avatarUrl } : {}),
           }).where(eq(contacts.id, contactId));
         } else {
+          const avatarUrl = await downloadAndStoreAvatar(client, entity, contactTelegramId);
           const inserted = await db.insert(contacts).values({
             telegramId: contactTelegramId,
             username: entity.username ?? null,
             firstName: entity.firstName ?? entity.title ?? null,
             lastName: entity.lastName ?? null,
             phone: entity.phone ?? null,
+            ...(avatarUrl ? { avatarUrl } : {}),
           });
           contactId = Number((inserted as any)[0]?.insertId ?? 0);
           if (!contactId) continue;
@@ -621,16 +661,29 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
       .where(eq(contacts.telegramId, senderId))
       .limit(1);
 
+    const rtClient = event.client ?? activeClients.get(accountId);
     if (existingContacts.length > 0) {
       contactId = existingContacts[0].id;
+      // Download avatar if missing
+      if (!existingContacts[0].avatarUrl && sender && rtClient) {
+        const avatarUrl = await downloadAndStoreAvatar(rtClient, sender, senderId);
+        if (avatarUrl) {
+          await db.update(contacts).set({ avatarUrl }).where(eq(contacts.id, contactId));
+        }
+      }
     } else {
       const name = sender?.firstName ?? sender?.title ?? null;
+      let avatarUrl: string | null = null;
+      if (sender && rtClient) {
+        avatarUrl = await downloadAndStoreAvatar(rtClient, sender, senderId);
+      }
       const inserted = await db.insert(contacts).values({
         telegramId: senderId,
         username: sender?.username ?? null,
         firstName: name,
         lastName: sender?.lastName ?? null,
         phone: sender?.phone ?? null,
+        ...(avatarUrl ? { avatarUrl } : {}),
       });
       contactId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId ?? 0);
     }
@@ -734,21 +787,38 @@ async function handleOutgoingMessage(accountId: number, event: NewMessageEvent):
     const existingContacts = await db.select().from(contacts)
       .where(eq(contacts.telegramId, recipientId)).limit(1);
 
+    const outClient = activeClients.get(accountId);
     if (existingContacts.length === 0) {
       // Contact doesn't exist yet — create it so the dialog can be found/created
       let entity: any = null;
       try {
-        entity = await activeClients.get(accountId)?.getEntity(msg.peerId).catch(() => null) ?? null;
+        entity = await outClient?.getEntity(msg.peerId).catch(() => null) ?? null;
       } catch {}
+      let avatarUrl: string | null = null;
+      if (entity && outClient) {
+        avatarUrl = await downloadAndStoreAvatar(outClient, entity, recipientId);
+      }
       const inserted = await db.insert(contacts).values({
         telegramId: recipientId,
         username: entity?.username ?? null,
         firstName: entity?.firstName ?? entity?.title ?? null,
         lastName: entity?.lastName ?? null,
         phone: entity?.phone ?? null,
+        ...(avatarUrl ? { avatarUrl } : {}),
       });
       const newContactId = Number((inserted as any)[0]?.insertId ?? 0);
       if (!newContactId) return;
+    } else if (!existingContacts[0].avatarUrl && outClient) {
+      // Existing contact without avatar — try to download
+      try {
+        const entity = await outClient.getEntity(msg.peerId).catch(() => null);
+        if (entity) {
+          const avatarUrl = await downloadAndStoreAvatar(outClient, entity, recipientId);
+          if (avatarUrl) {
+            await db.update(contacts).set({ avatarUrl }).where(eq(contacts.id, existingContacts[0].id));
+          }
+        }
+      } catch {}
     }
 
     const [contact] = await db.select().from(contacts)
@@ -1216,19 +1286,26 @@ export async function forceSyncAll(): Promise<{ synced: number; errors: number; 
 
         if (existingContacts.length > 0) {
           contactId = existingContacts[0].id;
+          let avatarUrl = existingContacts[0].avatarUrl;
+          if (!avatarUrl) {
+            avatarUrl = await downloadAndStoreAvatar(client, entity, contactTelegramId);
+          }
           await db.update(contacts).set({
             username: entity.username ?? existingContacts[0].username,
             firstName: entity.firstName ?? entity.title ?? existingContacts[0].firstName,
             lastName: entity.lastName ?? existingContacts[0].lastName,
             phone: entity.phone ?? existingContacts[0].phone,
+            ...(avatarUrl && !existingContacts[0].avatarUrl ? { avatarUrl } : {}),
           }).where(eq(contacts.id, contactId));
         } else {
+          const avatarUrl = await downloadAndStoreAvatar(client, entity, contactTelegramId);
           const inserted = await db.insert(contacts).values({
             telegramId: contactTelegramId,
             username: entity.username ?? null,
             firstName: entity.firstName ?? entity.title ?? null,
             lastName: entity.lastName ?? null,
             phone: entity.phone ?? null,
+            ...(avatarUrl ? { avatarUrl } : {}),
           });
           contactId = Number((inserted as any)[0]?.insertId ?? 0);
           if (!contactId) continue;
