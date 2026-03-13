@@ -681,42 +681,11 @@ async function syncAccountHistory(
   let syncedCount = 0;
 
   try {
-    // FIX #1 (Pagination): gramjs getDialogs returns a DialogsIter-like array.
-    // The correct way to paginate is to call getDialogs with offsetDate/offsetId/offsetPeer
-    // from the LAST dialog of the previous batch. gramjs internally handles this via
-    // the dialogs iterator, but when using direct getDialogs() calls we must pass
-    // the correct offset. The key fix: use last.dialog.date (not last.date) and
-    // last.message.id (not last.message?.id) for the offset.
-    const BATCH_SIZE = 100;
-    const allDialogs: any[] = [];
-    let offsetDate = 0;
-    let offsetId = 0;
-    let offsetPeer: any = undefined;
-
-    while (true) {
-      const batch = await client.getDialogs({
-        limit: BATCH_SIZE,
-        offsetDate,
-        offsetId,
-        offsetPeer,
-      });
-      if (!batch || batch.length === 0) break;
-      allDialogs.push(...batch);
-      console.log(`[Worker] Fetched ${allDialogs.length} dialogs so far...`);
-      if (batch.length < BATCH_SIZE) break; // last page
-
-      // FIX #1: correct offset extraction for gramjs pagination
-      const last = batch[batch.length - 1] as any;
-      // dialog.date is the timestamp of the last message in the dialog
-      offsetDate = last.dialog?.date ?? last.date ?? 0;
-      // message.id is the ID of the last message
-      offsetId = last.message?.id ?? last.dialog?.topMessage ?? 0;
-      // inputEntity is the peer for the offset
-      offsetPeer = last.inputEntity ?? undefined;
-
-      // Small delay to avoid flood limits
-      await new Promise((r) => setTimeout(r, 500));
-    }
+    // Per official gramjs source (dialogs.ts), getDialogs() internally calls
+    // iterDialogs().collect() which handles ALL pagination automatically.
+    // Passing limit: undefined fetches ALL dialogs. No manual pagination needed.
+    console.log(`[Worker] Fetching all dialogs for account #${accountId}...`);
+    const allDialogs = await client.getDialogs({ limit: undefined, ignoreMigrated: true });
 
     console.log(`[Worker] Total dialogs fetched: ${allDialogs.length}`);
 
@@ -759,8 +728,10 @@ async function syncAccountHistory(
           contactTelegramId = `group_${entity.id}`;
           contactName = entity.title ?? `Group ${entity.id}`;
         } else if (entity.className === "Channel") {
-          // Skip supergroups (megagroup) and broadcast channels — only personal dialogs + small groups
-          continue;
+          // Include supergroups (megagroup=true) but skip broadcast-only channels
+          if (!entity.megagroup) continue; // skip broadcast channels
+          contactTelegramId = `channel_${entity.id}`;
+          contactName = entity.title ?? `Group ${entity.id}`;
         } else {
           continue;
         }

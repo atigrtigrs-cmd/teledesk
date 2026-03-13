@@ -85,7 +85,12 @@ export async function startQRLogin(accountId: number): Promise<{ token: string; 
           resolve({ token: qr.token.toString("base64"), expires: qr.expires });
         },
         onError: async (err) => {
-          console.error(`[Telegram] QR login error for account #${accountId}:`, err.message);
+          console.error(`[Telegram] QR login onError for account #${accountId}: ${err.message} | errorMessage: ${(err as any).errorMessage} | stack: ${err.stack?.split('\n')[1]}`);
+          // Don't reject on SESSION_PASSWORD_NEEDED — gramjs handles it internally
+          if ((err as any).errorMessage === 'SESSION_PASSWORD_NEEDED') {
+            console.log(`[Telegram] SESSION_PASSWORD_NEEDED caught in onError — gramjs should handle this internally`);
+            return false; // don't stop auth
+          }
           reject(err);
           rejectTwoFA(err);
           return true;
@@ -142,6 +147,14 @@ export async function verifyQRTwoFAPassword(
   if (pendingQRClients.has(accountId)) {
     throw new Error("Ошибка авторизации. Проверьте пароль и попробуйте снова.");
   }
+}
+
+// Returns in-memory QR session status — used by frontend polling to detect 2FA requirement
+// without relying on DB update latency
+export function getQRLoginStatus(accountId: number): { pending: boolean; needsPassword: boolean } {
+  const session = pendingQRClients.get(accountId);
+  if (!session) return { pending: false, needsPassword: false };
+  return { pending: true, needsPassword: session.needsPassword };
 }
 
 // ─── Restore all active sessions on server start ─────────────────────────────

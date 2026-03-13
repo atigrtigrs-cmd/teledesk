@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, phone, firstName, status, syncStatus, lastSyncAt, totalTgDialogs FROM telegram_accounts ORDER BY id DESC LIMIT 5;\nSELECT telegramAccountId, COUNT(*) as cnt FROM dialogs GROUP BY telegramAccountId;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, phone, firstName, status, syncStatus, lastSyncAt, totalTgDialogs FROM telegram_accounts ORDER BY id DESC LIMIT 5;\nSELECT telegramAccountId, COUNT(*) as cnt FROM dialogs GROUP BY telegramAccountId;",
+  "rows": [
+    {
+      "id": "180012",
+      "phone": "79059365077",
+      "firstName": "Менеджер LeadCash",
+      "status": "active",
+      "syncStatus": "done",
+      "lastSyncAt": "2026-03-13 05:02:33",
+      "totalTgDialogs": "0"
+    }
+  ],
+  "messages": [
+    "telegramAccountId\tcnt",
+    "180012\t2"
+  ],
+  "stdout": "id\tphone\tfirstName\tstatus\tsyncStatus\tlastSyncAt\ttotalTgDialogs\n180012\t79059365077\tМенеджер LeadCash\tactive\tdone\t2026-03-13 05:02:33\t0\ntelegramAccountId\tcnt\n180012\t2\n",
+  "stderr": "",
+  "execution_time_ms": 68
+}
