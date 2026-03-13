@@ -20,7 +20,7 @@ import { eq, desc, and, sql, gte, count, countDistinct, inArray } from "drizzle-
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
-import { startQRLogin, disconnectAccount, sendTelegramMessage, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, connectAccount } from "./telegram";
+import { startQRLogin, disconnectAccount, sendTelegramMessage, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, verifyQRTwoFAPassword, connectAccount } from "./telegram";
 import { ENV } from "./_core/env";
 
 const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
@@ -228,6 +228,17 @@ export const appRouter = router({
           return { success: true };
         } catch (err: any) {
           throw new TRPCError({ code: "BAD_REQUEST", message: err?.message ?? "Invalid 2FA password" });
+        }
+      }),
+
+    verifyQRTwoFA: protectedProcedure
+      .input(z.object({ accountId: z.number(), password: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        try {
+          await verifyQRTwoFAPassword(input.accountId, input.password);
+          return { success: true };
+        } catch (err: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err?.message ?? "Неверный пароль 2FA" });
         }
       }),
 

@@ -274,3 +274,9 @@
 - [ ] Update syncProgress API to return totalTgDialogs per account
 - [ ] Update Inbox progress bar: show "X из Y диалогов в CRM" where Y = real Telegram count
 - [ ] Auto-refresh progress every 10s while sync is active
+
+## Fix 2FA in QR Login (Mar 13, 2026)
+
+- [ ] Fix QR login flow to handle SESSION_PASSWORD_NEEDED (2FA) after QR scan
+- [ ] Add 2FA password input step in frontend Accounts.tsx after QR scan
+- [ ] Add 2FA password handling in worker.ts / telegram.ts QR login procedure

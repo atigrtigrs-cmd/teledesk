@@ -32,35 +32,112 @@ let isRestoringAllSessions = false;
 
 // ─── QR Login Flow ───────────────────────────────────────────────────────────
 
+type PendingQRSession = {
+  client: TelegramClient;
+  resolveTwoFA: (pw: string) => void;
+  rejectTwoFA: (err: Error) => void;
+  needsPassword: boolean;
+  done: Promise<void>;
+};
+
+const pendingQRClients = new Map<number, PendingQRSession>();
+
 export async function startQRLogin(accountId: number): Promise<{ token: string; expires: number }> {
+  // Clean up any existing QR session for this account
+  const existing = pendingQRClients.get(accountId);
+  if (existing) {
+    existing.rejectTwoFA(new Error("New QR login attempt started"));
+    await existing.client.disconnect().catch(() => {});
+    pendingQRClients.delete(accountId);
+  }
+
   const session = new StringSession("");
   const client = new TelegramClient(session, TELEGRAM_API_ID, TELEGRAM_API_HASH, {
     connectionRetries: 3,
     useWSS: true,
+    deviceModel: "LeadCash Connect",
+    appVersion: "1.0",
+    langCode: "ru",
   });
 
   await client.connect();
 
+  let resolveTwoFA!: (pw: string) => void;
+  let rejectTwoFA!: (err: Error) => void;
+  const twoFAPromise = new Promise<string>((res, rej) => { resolveTwoFA = res; rejectTwoFA = rej; });
+
   return new Promise((resolve, reject) => {
-    client.signInUserWithQrCode(
+    const done = client.signInUserWithQrCode(
       { apiId: TELEGRAM_API_ID, apiHash: TELEGRAM_API_HASH },
       {
         qrCode: async (qr) => {
           // token is base64 encoded — frontend renders it as QR
+          // Mark that we need a password if 2FA is required
+          const pending = pendingQRClients.get(accountId);
+          if (pending) {
+            pending.needsPassword = false;
+          }
           resolve({ token: qr.token.toString("base64"), expires: qr.expires });
         },
         onError: async (err) => {
+          console.error(`[Telegram] QR login error for account #${accountId}:`, err.message);
           reject(err);
+          rejectTwoFA(err);
           return true;
         },
-        password: async () => "",
+        password: async () => {
+          // 2FA is required — signal to frontend and wait for password
+          console.log(`[Telegram] QR login: 2FA password required for account #${accountId}`);
+          const pending = pendingQRClients.get(accountId);
+          if (pending) {
+            pending.needsPassword = true;
+          }
+          // Update DB status to signal frontend that 2FA is needed
+          const db = await getDb();
+          if (db) {
+            await db.update(telegramAccounts)
+              .set({ status: "needs_2fa" })
+              .where(eq(telegramAccounts.id, accountId))
+              .catch(() => {});
+          }
+          return twoFAPromise;
+        },
       }
     ).then(async () => {
       // Login successful — save session and start listening
       const sessionStr = client.session.save() as unknown as string;
       await saveSessionAndListen(accountId, client, sessionStr);
-    }).catch(reject);
+      pendingQRClients.delete(accountId);
+      console.log(`[Telegram] QR login successful for account #${accountId}`);
+    }).catch((err: Error) => {
+      pendingQRClients.delete(accountId);
+      client.disconnect().catch(() => {});
+      console.error(`[Telegram] QR login failed for account #${accountId}:`, err.message);
+    });
+
+    pendingQRClients.set(accountId, {
+      client,
+      resolveTwoFA,
+      rejectTwoFA,
+      needsPassword: false,
+      done,
+    });
   });
+}
+
+export async function verifyQRTwoFAPassword(
+  accountId: number,
+  password: string
+): Promise<void> {
+  const pending = pendingQRClients.get(accountId);
+  if (!pending) throw new Error("Нет активной QR сессии. Попробуйте подключить аккаунт заново.");
+
+  pending.resolveTwoFA(password);
+  await pending.done;
+
+  if (pendingQRClients.has(accountId)) {
+    throw new Error("Ошибка авторизации. Проверьте пароль и попробуйте снова.");
+  }
 }
 
 // ─── Restore all active sessions on server start ─────────────────────────────

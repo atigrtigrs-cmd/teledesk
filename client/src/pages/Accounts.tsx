@@ -86,6 +86,8 @@ export default function Accounts() {
   const [qrExpires, setQrExpires] = useState<number | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrExpired, setQrExpired] = useState(false);
+  const [qrNeedsTwoFA, setQrNeedsTwoFA] = useState(false);
+  const [qrTwoFAPassword, setQrTwoFAPassword] = useState("");
 
   // Session string state
   const [sessionString, setSessionString] = useState("");
@@ -207,6 +209,15 @@ export default function Accounts() {
     onError: (err) => toast.error("Неверный пароль: " + err.message),
   });
 
+  const verifyQRTwoFAMutation = trpc.accounts.verifyQRTwoFA.useMutation({
+    onSuccess: () => {
+      toast.success("Аккаунт успешно подключён!");
+      handleCloseDialog();
+      refetch();
+    },
+    onError: (err) => toast.error("Неверный пароль 2FA: " + err.message),
+  });
+
   // Start QR when pendingAccountId set
   useEffect(() => {
     if (pendingAccountId !== null) {
@@ -226,7 +237,7 @@ export default function Accounts() {
     return () => clearTimeout(timer);
   }, [qrExpires]);
 
-  // Poll for account becoming active (QR mode)
+  // Poll for account becoming active or needing 2FA (QR mode)
   useEffect(() => {
     if (!pendingAccountId || !showDialog || loginMode !== "qr") return;
     const interval = setInterval(async () => {
@@ -236,10 +247,13 @@ export default function Accounts() {
         toast.success(`Telegram аккаунт ${acc.firstName ?? acc.phone ?? ""} подключён!`);
         handleCloseDialog();
         clearInterval(interval);
+      } else if (acc?.status === "needs_2fa" && !qrNeedsTwoFA) {
+        setQrNeedsTwoFA(true);
+        clearInterval(interval);
       }
-    }, 3000);
+    }, 2000);
     return () => clearInterval(interval);
-  }, [pendingAccountId, showDialog, loginMode, accounts]);
+  }, [pendingAccountId, showDialog, loginMode, accounts, qrNeedsTwoFA]);
 
   const handleOpenDialog = () => {
     setShowDialog(true);
@@ -257,6 +271,8 @@ export default function Accounts() {
     setPendingAccountId(null);
     setQrToken(null);
     setQrExpired(false);
+    setQrNeedsTwoFA(false);
+    setQrTwoFAPassword("");
     setSessionString("");
     setSessionPhone("");
   };
@@ -691,10 +707,46 @@ export default function Accounts() {
                   </Button>
                 </div>
 
-                {pendingAccountId && !qrLoading && qrUrl && (
+                {pendingAccountId && !qrLoading && qrUrl && !qrNeedsTwoFA && (
                   <p className="text-xs text-muted-foreground text-center">
                     Ожидание сканирования... Страница обновится автоматически
                   </p>
+                )}
+
+                {/* 2FA password form — shown when Telegram requires cloud password */}
+                {qrNeedsTwoFA && (
+                  <div className="w-full flex flex-col gap-3">
+                    <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 flex items-start gap-2">
+                      <span className="text-amber-400 shrink-0">🔐</span>
+                      <p className="text-xs text-amber-300 leading-relaxed">
+                        QR-код отсканирован успешно! На аккаунте включена двухфакторная аутентификация.
+                        Введите облачный пароль Telegram.
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Пароль 2FA (облачный пароль Telegram)</Label>
+                      <Input
+                        type="password"
+                        placeholder="Введите облачный пароль"
+                        value={qrTwoFAPassword}
+                        onChange={e => setQrTwoFAPassword(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && pendingAccountId && qrTwoFAPassword.trim() &&
+                          verifyQRTwoFAMutation.mutate({ accountId: pendingAccountId, password: qrTwoFAPassword })}
+                        autoFocus
+                      />
+                    </div>
+                    <Button
+                      className="w-full font-bold"
+                      onClick={() => pendingAccountId && verifyQRTwoFAMutation.mutate({ accountId: pendingAccountId, password: qrTwoFAPassword })}
+                      disabled={verifyQRTwoFAMutation.isPending || !qrTwoFAPassword.trim()}
+                    >
+                      {verifyQRTwoFAMutation.isPending ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Проверка...</>
+                      ) : (
+                        <>Войти</>
+                      )}
+                    </Button>
+                  </div>
                 )}
               </div>
             )}

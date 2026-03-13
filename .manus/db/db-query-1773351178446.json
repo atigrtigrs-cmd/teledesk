@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, username, phone, status, lastError, createdAt FROM telegram_accounts ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, username, phone, status, lastError, createdAt FROM telegram_accounts ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "180006",
+      "username": "NULL",
+      "phone": "+79059365077",
+      "status": "pending",
+      "lastError": "NULL",
+      "createdAt": "2026-03-12 21:18:28"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tphone\tstatus\tlastError\tcreatedAt\n180006\tNULL\t+79059365077\tpending\tNULL\t2026-03-12 21:18:28\n",
+  "stderr": "",
+  "execution_time_ms": 146
+}
