@@ -1,0 +1,79 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'telegram_accounts' ORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'telegram_accounts' ORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id"
+    },
+    {
+      "COLUMN_NAME": "ownerId"
+    },
+    {
+      "COLUMN_NAME": "phone"
+    },
+    {
+      "COLUMN_NAME": "username"
+    },
+    {
+      "COLUMN_NAME": "firstName"
+    },
+    {
+      "COLUMN_NAME": "lastName"
+    },
+    {
+      "COLUMN_NAME": "telegramId"
+    },
+    {
+      "COLUMN_NAME": "sessionString"
+    },
+    {
+      "COLUMN_NAME": "status"
+    },
+    {
+      "COLUMN_NAME": "avatarUrl"
+    },
+    {
+      "COLUMN_NAME": "createdAt"
+    },
+    {
+      "COLUMN_NAME": "updatedAt"
+    },
+    {
+      "COLUMN_NAME": "bitrixPipelineId"
+    },
+    {
+      "COLUMN_NAME": "bitrixPipelineName"
+    },
+    {
+      "COLUMN_NAME": "bitrixStageId"
+    },
+    {
+      "COLUMN_NAME": "bitrixResponsibleId"
+    },
+    {
+      "COLUMN_NAME": "bitrixResponsibleName"
+    },
+    {
+      "COLUMN_NAME": "syncStatus"
+    },
+    {
+      "COLUMN_NAME": "lastSyncAt"
+    },
+    {
+      "COLUMN_NAME": "syncedDialogs"
+    },
+    {
+      "COLUMN_NAME": "managerId"
+    },
+    {
+      "COLUMN_NAME": "lastError"
+    },
+    {
+      "COLUMN_NAME": "totalTgDialogs"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\nid\nownerId\nphone\nusername\nfirstName\nlastName\ntelegramId\nsessionString\nstatus\navatarUrl\ncreatedAt\nupdatedAt\nbitrixPipelineId\nbitrixPipelineName\nbitrixStageId\nbitrixResponsibleId\nbitrixResponsibleName\nsyncStatus\nlastSyncAt\nsyncedDialogs\nmanagerId\nlastError\ntotalTgDialogs\n",
+  "stderr": "",
+  "execution_time_ms": 57
+}
