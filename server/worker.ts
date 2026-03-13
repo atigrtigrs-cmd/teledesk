@@ -681,13 +681,30 @@ async function syncAccountHistory(
   let syncedCount = 0;
 
   try {
-    // Per official gramjs source (dialogs.ts), getDialogs() internally calls
+     // Per official gramjs source (dialogs.ts), getDialogs() internally calls
     // iterDialogs().collect() which handles ALL pagination automatically.
     // Passing limit: undefined fetches ALL dialogs. No manual pagination needed.
+    // Also fetch archived dialogs (folder=1) separately and merge.
     console.log(`[Worker] Fetching all dialogs for account #${accountId}...`);
-    const allDialogs = await client.getDialogs({ limit: undefined, ignoreMigrated: true });
+    const regularDialogs = await client.getDialogs({ limit: undefined, ignoreMigrated: true });
+    let archivedDialogs: any[] = [];
+    try {
+      archivedDialogs = await client.getDialogs({ limit: undefined, ignoreMigrated: true, archived: true });
+    } catch (e) {
+      console.log(`[Worker] Could not fetch archived dialogs:`, e);
+    }
+    // Merge and deduplicate by entity id
+    const seenIds = new Set<string>();
+    const allDialogs: any[] = [];
+    for (const d of [...regularDialogs, ...archivedDialogs]) {
+      const key = String((d as any).entity?.id ?? (d as any).id ?? Math.random());
+      if (!seenIds.has(key)) {
+        seenIds.add(key);
+        allDialogs.push(d);
+      }
+    }
 
-    console.log(`[Worker] Total dialogs fetched: ${allDialogs.length}`);
+    console.log(`[Worker] Total dialogs fetched: ${allDialogs.length} (regular: ${regularDialogs.length}, archived: ${archivedDialogs.length})`);
 
     // Save real total dialog count from Telegram so frontend can show accurate progress
     await db
@@ -725,13 +742,14 @@ async function syncAccountHistory(
             entity.username ||
             `User ${entity.id}`;
         } else if (entity.className === "Chat") {
+          // Skip groups with more than 20 participants
+          const memberCount = entity.participantsCount ?? 0;
+          if (memberCount > 20) continue;
           contactTelegramId = `group_${entity.id}`;
           contactName = entity.title ?? `Group ${entity.id}`;
         } else if (entity.className === "Channel") {
-          // Include supergroups (megagroup=true) but skip broadcast-only channels
-          if (!entity.megagroup) continue; // skip broadcast channels
-          contactTelegramId = `channel_${entity.id}`;
-          contactName = entity.title ?? `Group ${entity.id}`;
+          // Skip all channels (news channels, supergroups) — only personal chats and small groups needed
+          continue;
         } else {
           continue;
         }
