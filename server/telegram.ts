@@ -66,17 +66,22 @@ export async function startQRLogin(accountId: number): Promise<{ token: string; 
   let rejectTwoFA!: (err: Error) => void;
   const twoFAPromise = new Promise<string>((res, rej) => { resolveTwoFA = res; rejectTwoFA = rej; });
 
+  // Register in Map BEFORE starting signInUserWithQrCode to avoid race condition
+  pendingQRClients.set(accountId, {
+    client,
+    resolveTwoFA,
+    rejectTwoFA,
+    needsPassword: false,
+    done: Promise.resolve(), // placeholder, will be replaced below
+  });
+
   return new Promise((resolve, reject) => {
     const done = client.signInUserWithQrCode(
       { apiId: TELEGRAM_API_ID, apiHash: TELEGRAM_API_HASH },
       {
         qrCode: async (qr) => {
           // token is base64 encoded — frontend renders it as QR
-          // Mark that we need a password if 2FA is required
-          const pending = pendingQRClients.get(accountId);
-          if (pending) {
-            pending.needsPassword = false;
-          }
+          console.log(`[Telegram] QR code generated for account #${accountId}, expires: ${qr.expires}`);
           resolve({ token: qr.token.toString("base64"), expires: qr.expires });
         },
         onError: async (err) => {
@@ -98,7 +103,8 @@ export async function startQRLogin(accountId: number): Promise<{ token: string; 
             await db.update(telegramAccounts)
               .set({ status: "needs_2fa" })
               .where(eq(telegramAccounts.id, accountId))
-              .catch(() => {});
+              .catch((e) => console.error(`[Telegram] Failed to set needs_2fa status:`, e.message));
+            console.log(`[Telegram] Set status=needs_2fa for account #${accountId}`);
           }
           return twoFAPromise;
         },
@@ -115,13 +121,11 @@ export async function startQRLogin(accountId: number): Promise<{ token: string; 
       console.error(`[Telegram] QR login failed for account #${accountId}:`, err.message);
     });
 
-    pendingQRClients.set(accountId, {
-      client,
-      resolveTwoFA,
-      rejectTwoFA,
-      needsPassword: false,
-      done,
-    });
+    // Update the done promise in the Map
+    const pending = pendingQRClients.get(accountId);
+    if (pending) {
+      (pending as any).done = done;
+    }
   });
 }
 

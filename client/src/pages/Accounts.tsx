@@ -239,21 +239,21 @@ export default function Accounts() {
 
   // Poll for account becoming active or needing 2FA (QR mode)
   useEffect(() => {
-    if (!pendingAccountId || !showDialog || loginMode !== "qr") return;
+    if (!pendingAccountId || !showDialog || loginMode !== "qr" || qrNeedsTwoFA) return;
     const interval = setInterval(async () => {
-      await refetch();
-      const acc = accounts?.find(a => a.id === pendingAccountId);
+      const result = await refetch();
+      const acc = result.data?.find((a: any) => a.id === pendingAccountId);
       if (acc?.status === "active") {
         toast.success(`Telegram аккаунт ${acc.firstName ?? acc.phone ?? ""} подключён!`);
         handleCloseDialog();
         clearInterval(interval);
-      } else if (acc?.status === "needs_2fa" && !qrNeedsTwoFA) {
+      } else if (acc?.status === "needs_2fa") {
         setQrNeedsTwoFA(true);
         clearInterval(interval);
       }
-    }, 2000);
+    }, 1500);
     return () => clearInterval(interval);
-  }, [pendingAccountId, showDialog, loginMode, accounts, qrNeedsTwoFA]);
+  }, [pendingAccountId, showDialog, loginMode, qrNeedsTwoFA]);
 
   const handleOpenDialog = () => {
     setShowDialog(true);
