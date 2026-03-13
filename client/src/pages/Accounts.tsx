@@ -1,4 +1,4 @@
-import DashboardLayout from "@/components/DashboardLayout";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -356,7 +356,7 @@ export default function Accounts() {
   const qrUrl = qrToken ? buildTelegramQRUrl(qrToken) : null;
 
   return (
-    <DashboardLayout>
+    <div className="h-full overflow-y-auto">
       <div className="p-6 max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -1022,6 +1022,6 @@ export default function Accounts() {
           </DialogContent>
         </Dialog>
       </div>
-    </DashboardLayout>
+    </div>
   );
 }

@@ -280,3 +280,60 @@
 - [ ] Fix QR login flow to handle SESSION_PASSWORD_NEEDED (2FA) after QR scan
 - [ ] Add 2FA password input step in frontend Accounts.tsx after QR scan
 - [ ] Add 2FA password handling in worker.ts / telegram.ts QR login procedure
+
+
+## UI Redesign: Messenger-Style Layout (Mar 13, 2026)
+
+### Phase 1: Core Layout
+- [x] New AppLayout component: thin icon sidebar (60px) + content area
+- [x] Icon sidebar with sections: Messages, Contacts, Kanban, Analytics, Tags, Bot, Accounts, Settings
+- [x] Active state highlighting with orange accent
+- [x] User avatar at bottom of sidebar
+- [x] Update App.tsx routing to use new layout
+
+### Phase 2: Messages Section (Messenger-style)
+- [x] 3-column layout: dialog list (320px) + chat view (flex) + contact info panel (280px)
+- [x] Dialog list with search, filters (status, account)
+- [x] Dialog list items: avatar, name, last message preview, time, unread badge
+- [x] Chat view: message bubbles, date separators, send input
+- [x] Contact info panel: avatar, details, tags, status, assignee
+- [x] Real-time SSE updates integration
+- [x] Quick replies panel in chat
+- [x] Internal notes support
+
+### Phase 3: Contacts Section
+- [x] Contacts list with search and filters
+- [x] Contact card with full info
+
+### Phase 4: Analytics Dashboard
+- [x] KPI cards (dialogs, messages, deals, active accounts)
+- [x] Period filter (today/week/month/all)
+- [x] Account stats table
+- [x] Manager leaderboard table
+- [ ] Activity chart (bar/line) — future
+- [ ] Recent dialogs requiring attention — future
+
+### Phase 5: Tags Section
+- [x] Tags list with CRUD operations
+- [x] Tag color picker
+- [ ] Dialog count per tag — future
+
+### Phase 6: Accounts Section
+- [x] Connected accounts list with status (reused existing page)
+- [x] Sync progress indicators
+- [x] Add account (QR login) flow
+
+### Phase 7: Bot Admin Section
+- [x] Reused existing LeadCashBot page (all tabs: Overview, Moderation, Groups, Categories, Admins, Templates, Logs, Broadcast)
+- [x] Removed DashboardLayout wrapper
+
+### Phase 8: Settings Section
+- [x] Quick replies management
+- [x] Working hours management
+- [x] Bitrix24 integration settings
+
+### Phase 9: Polish
+- [x] Consistent dark theme with orange accents throughout
+- [x] Loading states and skeletons
+- [x] Empty states for all sections
+- [x] All 20 vitest tests passing

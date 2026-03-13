@@ -1,4 +1,4 @@
-import DashboardLayout from "@/components/DashboardLayout";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -785,7 +785,7 @@ export default function LeadCashBot() {
     groups: totalGroups,
   };
   return (
-    <DashboardLayout>
+    <div className="h-full overflow-y-auto">
       <div className="p-6 max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -844,6 +844,6 @@ export default function LeadCashBot() {
         {activeTab === "logs" && <LogsTab />}
         {activeTab === "broadcast" && <BroadcastTab />}
       </div>
-    </DashboardLayout>
+    </div>
   );
 }
