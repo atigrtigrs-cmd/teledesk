@@ -337,3 +337,8 @@
 - [x] Loading states and skeletons
 - [x] Empty states for all sections
 - [x] All 20 vitest tests passing
+
+## Deploy UI Redesign to Render (Mar 13, 2026)
+- [ ] Push updated code to GitHub
+- [ ] Trigger deploy on Render
+- [ ] Verify deployment
