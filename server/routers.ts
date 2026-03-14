@@ -351,6 +351,7 @@ export const appRouter = router({
         search: z.string().optional(),
         tagId: z.number().optional(),
         telegramAccountId: z.number().optional(),
+        hideGroups: z.boolean().optional().default(false),
       }))
       .query(async ({ input }) => {
         const db = await getDb();
@@ -368,6 +369,10 @@ export const appRouter = router({
         if (input.search) {
           const q = `%${input.search}%`;
           conds.push(sql`(${contacts.firstName} LIKE ${q} OR ${contacts.lastName} LIKE ${q} OR ${contacts.username} LIKE ${q})`);
+        }
+        // Hide groups/channels: telegramId starting with 'group_' or 'channel_' are non-personal chats
+        if (input.hideGroups) {
+          conds.push(sql`${contacts.telegramId} NOT LIKE 'group_%' AND ${contacts.telegramId} NOT LIKE 'channel_%'`);
         }
 
         const rows = await db
@@ -959,75 +964,119 @@ export const appRouter = router({
       }),
 
     // Per-user (manager) stats: assigned dialogs, response time, closed
+    // OPTIMIZED: replaced N+1 per-user queries with 3 bulk aggregated queries
     managerUserStats: protectedProcedure
       .input(z.object({
         period: z.enum(["today", "week", "month", "all"]).default("week"),
+        from: z.string().optional(), // ISO date string for custom range
+        to: z.string().optional(),   // ISO date string for custom range
         managerId: z.number().optional(),
-        tagId: z.number().optional(),
         accountId: z.number().optional(),
-        status: z.string().optional(),
       }))
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) return [];
         const { users } = await import("../drizzle/schema");
 
-        const now = new Date();
+        // Resolve date range
         let since: Date | null = null;
-        if (input.period === "today") since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        else if (input.period === "week") since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        else if (input.period === "month") since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        let until: Date | null = null;
+        if (input.from) {
+          since = new Date(input.from);
+          until = input.to ? new Date(input.to) : null;
+        } else {
+          const now = new Date();
+          if (input.period === "today") since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          else if (input.period === "week") since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          else if (input.period === "month") since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        }
 
         const allUsers = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users);
         const filteredUsers = input.managerId ? allUsers.filter(u => u.id === input.managerId) : allUsers;
+        const userIds = filteredUsers.map(u => u.id);
+        if (userIds.length === 0) return [];
 
-        const stats = await Promise.all(filteredUsers.map(async (u) => {
-          // Build conditions array with all active filters
-          const conds: any[] = [eq(dialogs.assigneeId, u.id)];
-          if (since) conds.push(gte(dialogs.createdAt, since));
-          if (input.accountId) conds.push(eq(dialogs.telegramAccountId, input.accountId));
-          if (input.status) conds.push(sql`${dialogs.status} = ${input.status}`);
-          // BUG-4 FIX: actual DB columns are dialogId/tagId (camelCase), not dialog_id/tag_id
-          if (input.tagId) conds.push(sql`${dialogs.id} IN (SELECT dialogId FROM dialog_tags WHERE tagId = ${input.tagId})`);
-          const baseFilter = and(...conds);
+        const idList = sql.join(userIds.map(id => sql`${id}`), sql`, `);
 
-          const [assigned] = await db.select({ count: count() }).from(dialogs).where(baseFilter);
+        // Build time conditions
+        const timeCond = since ? (until
+          ? sql`AND d.createdAt >= ${since} AND d.createdAt <= ${until}`
+          : sql`AND d.createdAt >= ${since}`
+        ) : sql``;
+        const msgTimeCond = since ? (until
+          ? sql`AND m.createdAt >= ${since} AND m.createdAt <= ${until}`
+          : sql`AND m.createdAt >= ${since}`
+        ) : sql``;
+        const accCond = input.accountId ? sql`AND d.telegramAccountId = ${input.accountId}` : sql``;
 
-          const closedConds = [...conds, sql`${dialogs.status} IN ('resolved','closed')`];
-          const [closed] = await db.select({ count: count() }).from(dialogs).where(and(...closedConds));
+        // Bulk query 1: dialog stats per assignee
+        const [dialogStatsRaw] = await db.execute(sql`
+          SELECT assigneeId,
+            COUNT(*) as assigned,
+            SUM(CASE WHEN status IN ('resolved','closed') THEN 1 ELSE 0 END) as closed,
+            SUM(CASE WHEN status NOT IN ('resolved','closed') THEN 1 ELSE 0 END) as open_count,
+            AVG(CASE WHEN firstResponseAt IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, createdAt, firstResponseAt) ELSE NULL END) as avg_resp
+          FROM dialogs d
+          WHERE assigneeId IN (${idList}) ${timeCond} ${accCond}
+          GROUP BY assigneeId
+        `) as any;
 
-          const openConds = [...conds, sql`${dialogs.status} NOT IN ('resolved','closed')`];
-          const [open] = await db.select({ count: count() }).from(dialogs).where(and(...openConds));
+        // Bulk query 2: sent messages per user
+        const [msgStatsRaw] = await db.execute(sql`
+          SELECT m.senderId,
+            COUNT(*) as sent
+          FROM messages m
+          JOIN dialogs d ON d.id = m.dialogId
+          WHERE m.senderId IN (${idList}) AND m.direction = 'outgoing' ${msgTimeCond} ${accCond}
+          GROUP BY m.senderId
+        `) as any;
 
-          // Avg first response time in minutes
-          const respConds = [...conds, sql`${dialogs.firstResponseAt} IS NOT NULL`];
-          const [avgResp] = await db.select({
-            avg: sql<number>`AVG(TIMESTAMPDIFF(MINUTE, ${dialogs.createdAt}, ${dialogs.firstResponseAt}))`
-          }).from(dialogs).where(and(...respConds));
+        // Bulk query 3: received messages handled (incoming msgs in dialogs assigned to user)
+        const [recvStatsRaw] = await db.execute(sql`
+          SELECT d.assigneeId,
+            COUNT(*) as received
+          FROM messages m
+          JOIN dialogs d ON d.id = m.dialogId
+          WHERE d.assigneeId IN (${idList}) AND m.direction = 'incoming' ${msgTimeCond} ${accCond}
+          GROUP BY d.assigneeId
+        `) as any;
 
-          const msgConds: any[] = [eq(messages.senderId, u.id), eq(messages.direction, "outgoing")];
-          if (since) msgConds.push(gte(messages.createdAt, since));
-          const [sentMsgs] = await db.select({ count: count() }).from(messages).where(and(...msgConds));
+        // Build lookup maps
+        const dlgMap = new Map<number, any>();
+        for (const r of (dialogStatsRaw as any[])) dlgMap.set(Number(r.assigneeId), r);
+        const msgMap = new Map<number, any>();
+        for (const r of (msgStatsRaw as any[])) msgMap.set(Number(r.senderId), r);
+        const recvMap = new Map<number, any>();
+        for (const r of (recvStatsRaw as any[])) recvMap.set(Number(r.assigneeId), r);
 
+        const stats = filteredUsers.map(u => {
+          const d = dlgMap.get(u.id);
+          const m = msgMap.get(u.id);
+          const r = recvMap.get(u.id);
           return {
             userId: u.id,
             name: u.name ?? u.email ?? `User #${u.id}`,
             role: u.role,
-            assigned: Number(assigned?.count ?? 0),
-            closed: Number(closed?.count ?? 0),
-            open: Number(open?.count ?? 0),
-            sentMessages: Number(sentMsgs?.count ?? 0),
-            avgResponseMinutes: avgResp?.avg != null ? Math.round(Number(avgResp.avg)) : null,
+            assigned: Number(d?.assigned ?? 0),
+            closed: Number(d?.closed ?? 0),
+            open: Number(d?.open_count ?? 0),
+            sentMessages: Number(m?.sent ?? 0),
+            receivedMessages: Number(r?.received ?? 0),
+            avgResponseMinutes: d?.avg_resp != null ? Math.round(Number(d.avg_resp)) : null,
           };
-        }));
+        });
 
-        return stats.sort((a, b) => b.assigned - a.assigned);
+        // Sort by total activity (sent + assigned), filter out completely inactive
+        return stats
+          .sort((a, b) => (b.sentMessages + b.assigned) - (a.sentMessages + a.assigned));
       }),
 
     // Summary with period + extra filters
     summaryByPeriod: protectedProcedure
       .input(z.object({
         period: z.enum(["today", "week", "month", "all"]).default("week"),
+        from: z.string().optional(),
+        to: z.string().optional(),
         managerId: z.number().optional(),
         tagId: z.number().optional(),
         accountId: z.number().optional(),
@@ -1037,25 +1086,30 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) return { totalDialogs: 0, totalDeals: 0, totalMessages: 0, activeAccounts: 0 };
 
-        const now = new Date();
         let since: Date | null = null;
-        if (input.period === "today") {
-          since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        } else if (input.period === "week") {
-          since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        } else if (input.period === "month") {
-          since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        let until: Date | null = null;
+        if (input.from) {
+          since = new Date(input.from);
+          until = input.to ? new Date(input.to) : null;
+        } else {
+          const now = new Date();
+          if (input.period === "today") since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          else if (input.period === "week") since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          else if (input.period === "month") since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         }
 
         const dConds: any[] = [];
         if (since) dConds.push(gte(dialogs.createdAt, since));
+        if (until) dConds.push(sql`${dialogs.createdAt} <= ${until}`);
         if (input.managerId) dConds.push(eq(dialogs.assigneeId, input.managerId));
         if (input.accountId) dConds.push(eq(dialogs.telegramAccountId, input.accountId));
         if (input.status) dConds.push(sql`${dialogs.status} = ${input.status}`);
-        // BUG-4 FIX: actual DB columns are dialogId/tagId (camelCase), not dialog_id/tag_id
         if (input.tagId) dConds.push(sql`${dialogs.id} IN (SELECT dialogId FROM dialog_tags WHERE tagId = ${input.tagId})`);
         const dialogWhere = dConds.length > 0 ? and(...dConds) : undefined;
-        const msgWhere = since ? gte(messages.createdAt, since) : undefined;
+        const msgConds: any[] = [];
+        if (since) msgConds.push(gte(messages.createdAt, since));
+        if (until) msgConds.push(sql`${messages.createdAt} <= ${until}`);
+        const msgWhere = msgConds.length > 0 ? and(...msgConds) : undefined;
 
         const [totalDialogs] = await db.select({ count: count() }).from(dialogs).where(dialogWhere);
         const dealConds = [...dConds, sql`${dialogs.bitrixDealId} IS NOT NULL`];

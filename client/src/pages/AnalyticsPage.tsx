@@ -22,7 +22,10 @@ import {
   Activity,
 } from "lucide-react";
 
-type Period = "today" | "week" | "month" | "all";
+import { Input } from "@/components/ui/input";
+import { CalendarDays } from "lucide-react";
+
+type Period = "today" | "week" | "month" | "all" | "custom";
 
 const statusLabels: Record<string, { label: string; color: string }> = {
   open: { label: "Открыт", color: "#3b82f6" },
@@ -36,14 +39,25 @@ const statusLabels: Record<string, { label: string; color: string }> = {
 
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState<Period>("week");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
-  const { data: summary, isLoading: summaryLoading } = trpc.analytics.summaryByPeriod.useQuery({ period });
-  const { data: accountStats } = trpc.analytics.accountStats.useQuery({ period });
-  const { data: managerStats } = trpc.analytics.managerUserStats.useQuery({ period });
-  const { data: messagesByDay } = trpc.analytics.messagesByDay.useQuery({ period });
-  const { data: dialogsByStatus } = trpc.analytics.dialogsByStatus.useQuery({ period });
-  const { data: hourlyActivity } = trpc.analytics.hourlyActivity.useQuery({ period });
-  const { data: newDialogsByDay } = trpc.analytics.newDialogsByDay.useQuery({ period });
+  // Build query params based on period or custom dates
+  const queryParams = useMemo(() => {
+    if (period === "custom" && dateFrom) {
+      return { period: "all" as const, from: dateFrom, to: dateTo || undefined };
+    }
+    return { period: period === "custom" ? "all" as const : period };
+  }, [period, dateFrom, dateTo]);
+
+  const { data: summary, isLoading: summaryLoading } = trpc.analytics.summaryByPeriod.useQuery(queryParams);
+  const { data: accountStats } = trpc.analytics.accountStats.useQuery({ period: queryParams.period });
+  const { data: managerStats } = trpc.analytics.managerUserStats.useQuery({ period: queryParams.period });
+  const { data: messagesByDay } = trpc.analytics.messagesByDay.useQuery({ period: queryParams.period });
+  const { data: dialogsByStatus } = trpc.analytics.dialogsByStatus.useQuery({ period: queryParams.period });
+  const { data: hourlyActivity } = trpc.analytics.hourlyActivity.useQuery({ period: queryParams.period });
+  const { data: newDialogsByDay } = trpc.analytics.newDialogsByDay.useQuery({ period: queryParams.period });
 
   // Derived metrics
   const totalSent = useMemo(() => accountStats?.stats?.reduce((s, a) => s + a.sent, 0) ?? 0, [accountStats]);
@@ -70,17 +84,50 @@ export default function AnalyticsPage() {
             <h2 className="text-lg font-bold">Аналитика</h2>
             <p className="text-sm text-muted-foreground mt-0.5">Обзор активности и эффективности</p>
           </div>
-          <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
-            <SelectTrigger className="w-36 h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">Сегодня</SelectItem>
-              <SelectItem value="week">Неделя</SelectItem>
-              <SelectItem value="month">Месяц</SelectItem>
-              <SelectItem value="all">Всё время</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            {/* Period presets */}
+            <div className="flex gap-1 bg-muted/30 rounded-lg p-0.5">
+              {(["today", "week", "month", "all"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => { setPeriod(p); setShowDatePicker(false); }}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                    period === p ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {{ today: "Сегодня", week: "Неделя", month: "Месяц", all: "Всё" }[p]}
+                </button>
+              ))}
+              <button
+                onClick={() => { setPeriod("custom"); setShowDatePicker(true); }}
+                className={`px-2 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1 ${
+                  period === "custom" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <CalendarDays className="h-3 w-3" />
+                Даты
+              </button>
+            </div>
+
+            {/* Custom date range */}
+            {showDatePicker && (
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-8 w-36 text-xs bg-muted/30 border-0"
+                />
+                <span className="text-xs text-muted-foreground">—</span>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="h-8 w-36 text-xs bg-muted/30 border-0"
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* KPI Cards - 2 rows */}

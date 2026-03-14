@@ -240,6 +240,9 @@ export default function Messages() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [selectedAccountId, setSelectedAccountId] = useState<number | undefined>(undefined);
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<number | undefined>(undefined);
+  const [selectedTagId, setSelectedTagId] = useState<number | undefined>(undefined);
+  const [hideGroups, setHideGroups] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const { width: dialogListWidth, onMouseDown: onResizeStart } = useResizable(320, 220, 600);
 
@@ -248,11 +251,17 @@ export default function Messages() {
 
   // Data queries
   const { data: allAccounts } = trpc.accounts.list.useQuery();
+  // Additional data for filters
+  const { data: allUsers } = trpc.users.list.useQuery();
+  const { data: allTags } = trpc.tags.list.useQuery();
   const { data: dialogsData, isLoading: dialogsLoading } = trpc.dialogs.list.useQuery(
     {
       status: statusFilter,
       search: search || undefined,
       telegramAccountId: selectedAccountId,
+      assigneeId: selectedAssigneeId,
+      tagId: selectedTagId,
+      hideGroups,
     },
     { refetchInterval: 30_000 }
   );
@@ -277,7 +286,15 @@ export default function Messages() {
         onSearchChange={setSearch}
         selectedAccountId={selectedAccountId}
         onAccountChange={setSelectedAccountId}
+        selectedAssigneeId={selectedAssigneeId}
+        onAssigneeChange={setSelectedAssigneeId}
+        selectedTagId={selectedTagId}
+        onTagChange={setSelectedTagId}
+        hideGroups={hideGroups}
+        onHideGroupsChange={setHideGroups}
         accounts={allAccounts ?? []}
+        users={allUsers ?? []}
+        tags={allTags ?? []}
         showFilters={showFilters}
         onToggleFilters={() => setShowFilters(v => !v)}
         connectionState={connectionState}
@@ -336,7 +353,15 @@ function DialogList({
   onSearchChange,
   selectedAccountId,
   onAccountChange,
+  selectedAssigneeId,
+  onAssigneeChange,
+  selectedTagId,
+  onTagChange,
+  hideGroups,
+  onHideGroupsChange,
   accounts,
+  users,
+  tags,
   showFilters,
   onToggleFilters,
   connectionState,
@@ -354,7 +379,15 @@ function DialogList({
   onSearchChange: (v: string) => void;
   selectedAccountId: number | undefined;
   onAccountChange: (v: number | undefined) => void;
+  selectedAssigneeId: number | undefined;
+  onAssigneeChange: (v: number | undefined) => void;
+  selectedTagId: number | undefined;
+  onTagChange: (v: number | undefined) => void;
+  hideGroups: boolean;
+  onHideGroupsChange: (v: boolean) => void;
   accounts: any[];
+  users: any[];
+  tags: any[];
   showFilters: boolean;
   onToggleFilters: () => void;
   connectionState: string;
@@ -362,6 +395,7 @@ function DialogList({
   isSyncing: boolean;
   width?: number;
 }) {
+  const activeFilterCount = [selectedAccountId, selectedAssigneeId, selectedTagId, hideGroups].filter(Boolean).length;
   return (
     <div style={{ width: width ?? 320 }} className="shrink-0 border-r border-border flex flex-col bg-[oklch(0.11_0.006_240)]">
       {/* Header */}
@@ -379,12 +413,17 @@ function DialogList({
             </button>
             <button
               onClick={onToggleFilters}
-              className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors ${
-                showFilters ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              className={`h-7 rounded-lg flex items-center justify-center transition-colors px-1.5 gap-0.5 ${
+                showFilters || activeFilterCount > 0 ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
               }`}
               title="Фильтры"
             >
               <Filter className="h-3.5 w-3.5" />
+              {activeFilterCount > 0 && (
+                <span className="text-[9px] font-bold bg-primary text-primary-foreground rounded-full h-3.5 min-w-3.5 flex items-center justify-center">
+                  {activeFilterCount}
+                </span>
+              )}
             </button>
             {/* Connection dot */}
             <div
@@ -424,12 +463,28 @@ function DialogList({
 
         {/* Extended filters */}
         {showFilters && (
-          <div className="mt-2 space-y-2">
+          <div className="mt-2 space-y-1.5">
+            {/* Hide groups toggle */}
+            <button
+              onClick={() => onHideGroupsChange(!hideGroups)}
+              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
+                hideGroups ? "bg-primary/15 text-primary" : "bg-muted/30 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <div className={`h-4 w-7 rounded-full transition-colors flex items-center ${
+                hideGroups ? "bg-primary justify-end" : "bg-muted-foreground/30 justify-start"
+              }`}>
+                <div className="h-3 w-3 rounded-full bg-white mx-0.5 transition-all" />
+              </div>
+              Только личные чаты
+            </button>
+
+            {/* Account filter */}
             <Select
               value={selectedAccountId?.toString() ?? "all"}
               onValueChange={(v) => onAccountChange(v === "all" ? undefined : parseInt(v))}
             >
-              <SelectTrigger className="h-8 text-xs bg-muted/30 border-0">
+              <SelectTrigger className="h-7 text-xs bg-muted/30 border-0">
                 <SelectValue placeholder="Все аккаунты" />
               </SelectTrigger>
               <SelectContent>
@@ -441,6 +496,55 @@ function DialogList({
                 ))}
               </SelectContent>
             </Select>
+
+            {/* Assignee filter */}
+            <Select
+              value={selectedAssigneeId?.toString() ?? "all"}
+              onValueChange={(v) => onAssigneeChange(v === "all" ? undefined : parseInt(v))}
+            >
+              <SelectTrigger className="h-7 text-xs bg-muted/30 border-0">
+                <SelectValue placeholder="Все менеджеры" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все менеджеры</SelectItem>
+                {users.map((u: any) => (
+                  <SelectItem key={u.id} value={u.id.toString()}>
+                    {u.name ?? u.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Tag filter */}
+            <Select
+              value={selectedTagId?.toString() ?? "all"}
+              onValueChange={(v) => onTagChange(v === "all" ? undefined : parseInt(v))}
+            >
+              <SelectTrigger className="h-7 text-xs bg-muted/30 border-0">
+                <SelectValue placeholder="Все теги" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все теги</SelectItem>
+                {tags.map((t: any) => (
+                  <SelectItem key={t.id} value={t.id.toString()}>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: t.color }} />
+                      {t.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Clear all filters */}
+            {(selectedAccountId || selectedAssigneeId || selectedTagId) && (
+              <button
+                onClick={() => { onAccountChange(undefined); onAssigneeChange(undefined); onTagChange(undefined); }}
+                className="w-full text-xs text-muted-foreground hover:text-foreground py-1 transition-colors"
+              >
+                Сбросить фильтры
+              </button>
+            )}
           </div>
         )}
       </div>

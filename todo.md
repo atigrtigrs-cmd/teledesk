@@ -357,7 +357,16 @@
 ## Show Message Author in Chat (Mar 14, 2026)
 - [x] Show sender name on each message bubble (manager name or contact name)
 - [x] Show which account sent outgoing messages (if multiple accounts)
-- [ ] Deploy to GitHub and Render
+- [x] Deploy to GitHub and Render
 - [x] Fix: instant scroll to bottom on dialog open (no animated scroll through history)
 - [x] Resizable dialog list column (drag to resize width)
 - [x] Expand analytics: charts (messages by day, dialogs by status, hourly activity, new dialogs by day), 8 KPI cards, totals row, efficiency bars
+
+## Analytics Improvements (Mar 14, 2026)
+- [x] Custom date range picker (from-to) in addition to presets
+- [x] Speed up dashboard loading (optimize N+1 queries in managerUserStats)
+- [x] Fix manager stats showing all zeros (count by sent messages, not just assigneeId)
+- [x] Add meaningful working metrics that have real data
+- [ ] Hide managers with zero activity or show only active ones
+- [x] Redesign dialog filters: compact toggles, better UX (account, assignee, tag filters + badge count)
+- [x] Hide supergroups and channels toggle in dialog list ("Только личные чаты" toggle, default on)
