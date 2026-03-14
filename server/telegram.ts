@@ -465,10 +465,13 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
 
         if (existingContacts.length > 0) {
           contactId = existingContacts[0].id;
-          // Download avatar if missing
+          // Download avatar if missing — MTProto first, Bot API fallback
           let avatarUrl = existingContacts[0].avatarUrl;
           if (!avatarUrl) {
             avatarUrl = await downloadAndStoreAvatar(client, entity, contactTelegramId);
+            if (!avatarUrl) {
+              avatarUrl = await downloadAvatarViaBotApi(contactTelegramId, process.env.LEADCASH_BOT_TOKEN ?? "");
+            }
           }
           // Update contact info
           await db.update(contacts).set({
@@ -479,7 +482,10 @@ export async function syncAccountHistory(accountId: number, clientArg?: Telegram
             ...(avatarUrl && !existingContacts[0].avatarUrl ? { avatarUrl } : {}),
           }).where(eq(contacts.id, contactId));
         } else {
-          const avatarUrl = await downloadAndStoreAvatar(client, entity, contactTelegramId);
+          let avatarUrl = await downloadAndStoreAvatar(client, entity, contactTelegramId);
+          if (!avatarUrl) {
+            avatarUrl = await downloadAvatarViaBotApi(contactTelegramId, process.env.LEADCASH_BOT_TOKEN ?? "");
+          }
           const inserted = await db.insert(contacts).values({
             telegramId: contactTelegramId,
             username: entity.username ?? null,
@@ -664,9 +670,15 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
     const rtClient = event.client ?? activeClients.get(accountId);
     if (existingContacts.length > 0) {
       contactId = existingContacts[0].id;
-      // Download avatar if missing
-      if (!existingContacts[0].avatarUrl && sender && rtClient) {
-        const avatarUrl = await downloadAndStoreAvatar(rtClient, sender, senderId);
+      // Download avatar if missing — try MTProto first, then Bot API fallback
+      if (!existingContacts[0].avatarUrl) {
+        let avatarUrl: string | null = null;
+        if (sender && rtClient) {
+          avatarUrl = await downloadAndStoreAvatar(rtClient, sender, senderId);
+        }
+        if (!avatarUrl) {
+          avatarUrl = await downloadAvatarViaBotApi(senderId, process.env.LEADCASH_BOT_TOKEN ?? "");
+        }
         if (avatarUrl) {
           await db.update(contacts).set({ avatarUrl }).where(eq(contacts.id, contactId));
         }
@@ -676,6 +688,9 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
       let avatarUrl: string | null = null;
       if (sender && rtClient) {
         avatarUrl = await downloadAndStoreAvatar(rtClient, sender, senderId);
+      }
+      if (!avatarUrl) {
+        avatarUrl = await downloadAvatarViaBotApi(senderId, process.env.LEADCASH_BOT_TOKEN ?? "");
       }
       const inserted = await db.insert(contacts).values({
         telegramId: senderId,
@@ -1414,10 +1429,52 @@ export async function forceSyncAll(): Promise<{ synced: number; errors: number; 
 }
 
 /**
- * Bulk update avatars for all contacts that don't have one yet.
- * Uses active TG clients to download profile photos.
+ * Download a user's avatar via Telegram Bot API (no MTProto session needed).
+ * Returns the S3 CDN URL or null if no photo / error.
  */
-export async function bulkUpdateAvatars(): Promise<{ updated: number; skipped: number; errors: number }> {
+async function downloadAvatarViaBotApi(
+  telegramId: string,
+  botToken: string
+): Promise<string | null> {
+  try {
+    // Skip groups/channels — Bot API only works with user IDs
+    if (telegramId.startsWith("group_") || telegramId.startsWith("channel_")) return null;
+
+    const photosRes = await fetch(
+      `https://api.telegram.org/bot${botToken}/getUserProfilePhotos?user_id=${telegramId}&limit=1`
+    );
+    const photosData = (await photosRes.json()) as any;
+    if (!photosData.ok || !photosData.result?.total_count) return null;
+
+    // Pick the medium-size photo (320px) — index 1 if available, else last
+    const photoSizes = photosData.result.photos[0];
+    if (!photoSizes || photoSizes.length === 0) return null;
+    const targetPhoto = photoSizes.length >= 2 ? photoSizes[1] : photoSizes[photoSizes.length - 1];
+
+    // Get file path
+    const fileRes = await fetch(
+      `https://api.telegram.org/bot${botToken}/getFile?file_id=${targetPhoto.file_id}`
+    );
+    const fileData = (await fileRes.json()) as any;
+    if (!fileData.ok || !fileData.result?.file_path) return null;
+
+    // Download the file
+    const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`;
+    const downloadRes = await fetch(downloadUrl);
+    if (!downloadRes.ok) return null;
+    const buffer = Buffer.from(await downloadRes.arrayBuffer());
+    if (buffer.length < 100) return null;
+
+    // Upload to S3
+    const key = `avatars/${telegramId}.jpg`;
+    const { url } = await storagePut(key, buffer, "image/jpeg");
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+export async function bulkUpdateAvatars(): Promise<{ updated: number; skipped: number; errors: number; total: number }> {
   const db = await getDb();
   if (!db) throw new Error("No database connection");
 
@@ -1429,61 +1486,91 @@ export async function bulkUpdateAvatars(): Promise<{ updated: number; skipped: n
     sql`${contacts.avatarUrl} IS NULL OR ${contacts.avatarUrl} = ''`
   );
 
-  if (contactsWithoutAvatar.length === 0) {
-    return { updated: 0, skipped: 0, errors: 0 };
+  const total = contactsWithoutAvatar.length;
+  if (total === 0) {
+    return { updated: 0, skipped: 0, errors: 0, total: 0 };
   }
 
-  console.log(`[BulkAvatars] Starting for ${contactsWithoutAvatar.length} contacts without avatars`);
-
-  // Get any active client to use for downloading
-  const clientEntries = Array.from(activeClients.entries());
-  if (clientEntries.length === 0) {
-    throw new Error("No active Telegram clients available");
-  }
+  console.log(`[BulkAvatars] Starting for ${total} contacts without avatars`);
 
   let updated = 0;
   let skipped = 0;
   let errors = 0;
 
+  // Strategy 1: Try Bot API first (works without MTProto sessions)
+  const botToken = process.env.LEADCASH_BOT_TOKEN ?? "";
+  const hasBotToken = botToken.length > 10;
+  const hasMTProto = activeClients.size > 0;
+
+  if (hasBotToken) {
+    console.log(`[BulkAvatars] Using Bot API strategy (token available)`);
+  }
+  if (hasMTProto) {
+    console.log(`[BulkAvatars] MTProto fallback available (${activeClients.size} active clients)`);
+  }
+  if (!hasBotToken && !hasMTProto) {
+    throw new Error("No Bot Token and no active Telegram clients — cannot download avatars");
+  }
+
   // Clear the avatar download cache so we can re-try
   avatarDownloadedSet.clear();
 
-  for (const contact of contactsWithoutAvatar) {
-    try {
-      // Try each client until one works
-      let avatarUrl: string | null = null;
-      for (const [, client] of clientEntries) {
-        try {
-          const entity = await client.getEntity(contact.telegramId).catch(() => null);
-          if (entity) {
-            avatarUrl = await downloadAndStoreAvatar(client, entity, contact.telegramId);
-            break;
-          }
-        } catch {
-          continue;
+  // Process in batches of 5 concurrent requests
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < contactsWithoutAvatar.length; i += BATCH_SIZE) {
+    const batch = contactsWithoutAvatar.slice(i, i + BATCH_SIZE);
+    
+    await Promise.all(batch.map(async (contact) => {
+      try {
+        let avatarUrl: string | null = null;
+
+        // Try Bot API first
+        if (hasBotToken && !contact.telegramId.startsWith("group_") && !contact.telegramId.startsWith("channel_")) {
+          avatarUrl = await downloadAvatarViaBotApi(contact.telegramId, botToken);
         }
-      }
 
-      if (avatarUrl) {
-        await db.update(contacts).set({ avatarUrl }).where(eq(contacts.id, contact.id));
-        updated++;
-      } else {
-        skipped++;
-      }
+        // Fallback to MTProto for groups/channels or if Bot API failed
+        if (!avatarUrl && hasMTProto) {
+          const clientEntries = Array.from(activeClients.entries());
+          for (const [, client] of clientEntries) {
+            try {
+              const entity = await client.getEntity(contact.telegramId).catch(() => null);
+              if (entity) {
+                avatarUrl = await downloadAndStoreAvatar(client, entity, contact.telegramId);
+                break;
+              }
+            } catch {
+              continue;
+            }
+          }
+        }
 
-      // Rate limit: small delay
-      if ((updated + skipped + errors) % 10 === 0) {
-        await new Promise(r => setTimeout(r, 200));
+        if (avatarUrl) {
+          await db.update(contacts).set({ avatarUrl }).where(eq(contacts.id, contact.id));
+          updated++;
+        } else {
+          skipped++;
+        }
+      } catch (err: any) {
+        errors++;
       }
-    } catch (err: any) {
-      errors++;
-      if (errors > 50) {
-        console.warn(`[BulkAvatars] Too many errors (${errors}), stopping`);
-        break;
-      }
+    }));
+
+    // Rate limit: 200ms between batches
+    await new Promise(r => setTimeout(r, 200));
+
+    // Log progress every 50 contacts
+    if ((i + BATCH_SIZE) % 50 === 0 || i + BATCH_SIZE >= contactsWithoutAvatar.length) {
+      console.log(`[BulkAvatars] Progress: ${Math.min(i + BATCH_SIZE, contactsWithoutAvatar.length)}/${total} (updated: ${updated}, skipped: ${skipped}, errors: ${errors})`);
+    }
+
+    // Stop if too many errors
+    if (errors > 100) {
+      console.warn(`[BulkAvatars] Too many errors (${errors}), stopping`);
+      break;
     }
   }
 
-  console.log(`[BulkAvatars] Done: ${updated} updated, ${skipped} skipped, ${errors} errors`);
-  return { updated, skipped, errors };
+  console.log(`[BulkAvatars] Done: ${updated} updated, ${skipped} skipped, ${errors} errors out of ${total}`);
+  return { updated, skipped, errors, total };
 }

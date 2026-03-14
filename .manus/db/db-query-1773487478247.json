@@ -1,0 +1,15 @@
+{
+  "query": "SELECT COUNT(*) as total, SUM(CASE WHEN avatarUrl IS NULL OR avatarUrl = '' THEN 1 ELSE 0 END) as no_avatar, SUM(CASE WHEN avatarUrl IS NOT NULL AND avatarUrl != '' THEN 1 ELSE 0 END) as has_avatar FROM contacts;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT COUNT(*) as total, SUM(CASE WHEN avatarUrl IS NULL OR avatarUrl = '' THEN 1 ELSE 0 END) as no_avatar, SUM(CASE WHEN avatarUrl IS NOT NULL AND avatarUrl != '' THEN 1 ELSE 0 END) as has_avatar FROM contacts;",
+  "rows": [
+    {
+      "total": "1468",
+      "no_avatar": "1468",
+      "has_avatar": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "total\tno_avatar\thas_avatar\n1468\t1468\t0\n",
+  "stderr": "",
+  "execution_time_ms": 220
+}

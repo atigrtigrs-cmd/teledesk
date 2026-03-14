@@ -200,6 +200,13 @@ export default function Accounts() {
     onError: (e) => toast.error(e.message),
   });
 
+  const updateAvatarsMutation = trpc.accounts.updateAvatars.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Аватарки обновлены: ${data.updated} загружено, ${data.skipped} пропущено${data.errors ? `, ${data.errors} ошибок` : ""}`);
+    },
+    onError: (e) => toast.error("Ошибка обновления аватарок: " + e.message),
+  });
+
   const verifyTwoFAMutation = trpc.accounts.verifyTwoFA.useMutation({
     onSuccess: () => {
       toast.success("Аккаунт успешно подключён!");
@@ -365,6 +372,17 @@ export default function Accounts() {
             <h1 className="text-2xl font-black tracking-tight">Telegram аккаунты</h1>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => updateAvatarsMutation.mutate()}
+              disabled={updateAvatarsMutation.isPending}
+              className="gap-2 font-bold"
+            >
+              {updateAvatarsMutation.isPending
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <CloudDownload className="h-4 w-4" />}
+              Аватарки
+            </Button>
             <Button
               variant="outline"
               onClick={() => reconnectAllMutation.mutate()}

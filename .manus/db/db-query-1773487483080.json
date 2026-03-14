@@ -1,0 +1,15 @@
+{
+  "query": "SELECT \n  (SELECT COUNT(*) FROM contacts) as total_contacts,\n  (SELECT COUNT(*) FROM contacts WHERE avatarUrl IS NOT NULL AND avatarUrl != '') as with_avatar,\n  (SELECT COUNT(*) FROM contacts WHERE avatarUrl IS NULL OR avatarUrl = '') as without_avatar;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT \n  (SELECT COUNT(*) FROM contacts) as total_contacts,\n  (SELECT COUNT(*) FROM contacts WHERE avatarUrl IS NOT NULL AND avatarUrl != '') as with_avatar,\n  (SELECT COUNT(*) FROM contacts WHERE avatarUrl IS NULL OR avatarUrl = '') as without_avatar;",
+  "rows": [
+    {
+      "total_contacts": "1468",
+      "with_avatar": "0",
+      "without_avatar": "1468"
+    }
+  ],
+  "messages": [],
+  "stdout": "total_contacts\twith_avatar\twithout_avatar\n1468\t0\t1468\n",
+  "stderr": "",
+  "execution_time_ms": 66
+}

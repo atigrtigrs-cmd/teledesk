@@ -387,3 +387,12 @@
 - [x] Added "Сгенерировать" / "Обновить" button with loading state
 - [x] Summary shows sentiment (positive/neutral/negative) + key topics + recommendation
 - [x] Written 4 vitest tests for AI summary (all 27 tests passing)
+
+## Fix Avatars: Make Visible in TeleDesk (Mar 14, 2026)
+- [ ] Investigate why all 1468 contacts have NULL avatarUrl
+- [ ] Check avatar download code in telegram.ts and accounts router
+- [ ] Fix bulk avatar download to work from main server (not just Render worker)
+- [ ] Add endpoint to trigger avatar download for all contacts
+- [ ] Verify avatars display correctly in dialog list, chat header, contact panel
+- [ ] Deploy and test on production
+- [ ] Prepare comprehensive audit document: potential problems + improvement opportunities

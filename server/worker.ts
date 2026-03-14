@@ -26,6 +26,44 @@ import {
   contacts,
   bitrixSettings,
 } from "../drizzle/schema";
+import { storagePut } from "./storage";
+
+// ─── Avatar download via Bot API ─────────────────────────────────────────────
+async function downloadAvatarViaBotApi(telegramId: string): Promise<string | null> {
+  try {
+    const botToken = process.env.LEADCASH_BOT_TOKEN ?? "";
+    if (!botToken || botToken.length < 10) return null;
+    if (telegramId.startsWith("group_") || telegramId.startsWith("channel_")) return null;
+
+    const photosRes = await fetch(
+      `https://api.telegram.org/bot${botToken}/getUserProfilePhotos?user_id=${telegramId}&limit=1`
+    );
+    const photosData = (await photosRes.json()) as any;
+    if (!photosData.ok || !photosData.result?.total_count) return null;
+
+    const photoSizes = photosData.result.photos[0];
+    if (!photoSizes || photoSizes.length === 0) return null;
+    const targetPhoto = photoSizes.length >= 2 ? photoSizes[1] : photoSizes[photoSizes.length - 1];
+
+    const fileRes = await fetch(
+      `https://api.telegram.org/bot${botToken}/getFile?file_id=${targetPhoto.file_id}`
+    );
+    const fileData = (await fileRes.json()) as any;
+    if (!fileData.ok || !fileData.result?.file_path) return null;
+
+    const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`;
+    const downloadRes = await fetch(downloadUrl);
+    if (!downloadRes.ok) return null;
+    const buffer = Buffer.from(await downloadRes.arrayBuffer());
+    if (buffer.length < 100) return null;
+
+    const key = `avatars/${telegramId}.jpg`;
+    const { url } = await storagePut(key, buffer, "image/jpeg");
+    return url;
+  } catch {
+    return null;
+  }
+}
 
 // ─── DB connection ────────────────────────────────────────────────────────────
 
@@ -429,14 +467,24 @@ async function handleIncomingMessage(
 
     if (existingContacts.length > 0) {
       contactId = existingContacts[0].id;
+      // Download avatar if missing (non-blocking)
+      if (!existingContacts[0].avatarUrl) {
+        downloadAvatarViaBotApi(senderId).then(avatarUrl => {
+          if (avatarUrl && contactId) {
+            db.update(contacts).set({ avatarUrl }).where(eq(contacts.id, contactId)).catch(() => {});
+          }
+        }).catch(() => {});
+      }
     } else {
       const name = sender?.firstName ?? sender?.title ?? null;
+      const avatarUrl = await downloadAvatarViaBotApi(senderId);
       const inserted = await db.insert(contacts).values({
         telegramId: senderId,
         username: sender?.username ?? null,
         firstName: name,
         lastName: sender?.lastName ?? null,
         phone: sender?.phone ?? null,
+        ...(avatarUrl ? { avatarUrl } : {}),
       });
       contactId = Number(
         (inserted as any)[0]?.insertId ?? (inserted as any).insertId ?? 0
@@ -782,25 +830,34 @@ async function syncAccountHistory(
 
         if (existingContacts.length > 0) {
           contactId = existingContacts[0].id;
+          const updateSet: Record<string, any> = {
+            username: entity.username ?? existingContacts[0].username,
+            firstName:
+              entity.firstName ??
+              entity.title ??
+              existingContacts[0].firstName,
+            lastName: entity.lastName ?? existingContacts[0].lastName,
+            phone: entity.phone ?? existingContacts[0].phone,
+          };
+          // Download avatar if missing
+          if (!existingContacts[0].avatarUrl) {
+            const avatarUrl = await downloadAvatarViaBotApi(contactTelegramId);
+            if (avatarUrl) updateSet.avatarUrl = avatarUrl;
+          }
           await db
             .update(contacts)
-            .set({
-              username: entity.username ?? existingContacts[0].username,
-              firstName:
-                entity.firstName ??
-                entity.title ??
-                existingContacts[0].firstName,
-              lastName: entity.lastName ?? existingContacts[0].lastName,
-              phone: entity.phone ?? existingContacts[0].phone,
-            })
+            .set(updateSet)
             .where(eq(contacts.id, contactId));
         } else {
+          // Download avatar for new contact
+          const avatarUrl = await downloadAvatarViaBotApi(contactTelegramId);
           const inserted = await db.insert(contacts).values({
             telegramId: contactTelegramId,
             username: entity.username ?? null,
             firstName: entity.firstName ?? entity.title ?? null,
             lastName: entity.lastName ?? null,
             phone: entity.phone ?? null,
+            ...(avatarUrl ? { avatarUrl } : {}),
           });
           contactId = Number((inserted as any)[0]?.insertId ?? 0);
           if (!contactId) continue;
