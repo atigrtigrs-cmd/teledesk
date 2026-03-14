@@ -52,12 +52,12 @@ export default function AnalyticsPage() {
   }, [period, dateFrom, dateTo]);
 
   const { data: summary, isLoading: summaryLoading } = trpc.analytics.summaryByPeriod.useQuery(queryParams);
-  const { data: accountStats } = trpc.analytics.accountStats.useQuery({ period: queryParams.period });
+  const { data: accountStats } = trpc.analytics.accountStats.useQuery(queryParams);
   // managerStats removed — accounts table IS the managers table
-  const { data: messagesByDay } = trpc.analytics.messagesByDay.useQuery({ period: queryParams.period });
-  const { data: dialogsByStatus } = trpc.analytics.dialogsByStatus.useQuery({ period: queryParams.period });
-  const { data: hourlyActivity } = trpc.analytics.hourlyActivity.useQuery({ period: queryParams.period });
-  const { data: newDialogsByDay } = trpc.analytics.newDialogsByDay.useQuery({ period: queryParams.period });
+  const { data: messagesByDay } = trpc.analytics.messagesByDay.useQuery(queryParams);
+  const { data: dialogsByStatus } = trpc.analytics.dialogsByStatus.useQuery(queryParams);
+  const { data: hourlyActivity } = trpc.analytics.hourlyActivity.useQuery(queryParams);
+  const { data: newDialogsByDay } = trpc.analytics.newDialogsByDay.useQuery(queryParams);
 
   // Derived metrics
   const totalSent = useMemo(() => accountStats?.stats?.reduce((s, a) => s + a.sent, 0) ?? 0, [accountStats]);

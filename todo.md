@@ -378,3 +378,4 @@
 - [ ] Fix avatars not showing in dialog list (0/1468 have avatarUrl — need bulk update on Render)
 - [x] Added accounts.updateAvatars tRPC procedure for bulk avatar download
 - [x] Fix broken charts: rewrote all 3 charts to SVG with proper scaling, grid lines, tooltips
+- [x] Fix: pass custom date range (from/to) to ALL analytics queries (accountStats, messagesByDay, dialogsByStatus, hourlyActivity, newDialogsByDay)

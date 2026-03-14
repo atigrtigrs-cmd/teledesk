@@ -1135,13 +1135,19 @@ export const appRouter = router({
     accountStats: protectedProcedure
       .input(z.object({
         period: z.enum(["today", "week", "month", "all"]).default("week"),
+        from: z.string().optional(),
+        to: z.string().optional(),
       }))
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) return { stats: [], period: input.period };
         const now = Date.now();
         let fromTs: number | null = null;
-        if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
+        let toTs: number | null = null;
+        if (input.from) {
+          fromTs = new Date(input.from).getTime();
+          if (input.to) toTs = new Date(input.to).getTime() + 86400000;
+        } else if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
         else if (input.period === "week") fromTs = now - 7 * 24 * 60 * 60 * 1000;
         else if (input.period === "month") fromTs = now - 30 * 24 * 60 * 60 * 1000;
 
@@ -1171,7 +1177,7 @@ export const appRouter = router({
                     COUNT(DISTINCT m.dialogId) as activeDialogs
                   FROM messages m
                   JOIN dialogs d ON d.id = m.dialogId
-                  WHERE d.telegramAccountId IN (${idList}) AND m.createdAt >= ${fromTs}
+                  WHERE d.telegramAccountId IN (${idList}) AND m.createdAt >= ${fromTs}${toTs ? sql` AND m.createdAt < ${toTs}` : sql``}
                   GROUP BY d.telegramAccountId`
             : sql`SELECT d.telegramAccountId as accId,
                     SUM(CASE WHEN m.direction='outgoing' THEN 1 ELSE 0 END) as sent,
@@ -1188,7 +1194,7 @@ export const appRouter = router({
           fromTs
             ? sql`SELECT telegramAccountId as accId,
                     COUNT(*) as total,
-                    SUM(CASE WHEN createdAt >= ${fromTs} THEN 1 ELSE 0 END) as newDialogs,
+                    SUM(CASE WHEN createdAt >= ${fromTs}${toTs ? sql` AND createdAt < ${toTs}` : sql``} THEN 1 ELSE 0 END) as newDialogs,
                     SUM(CASE WHEN status='needs_reply' THEN 1 ELSE 0 END) as needsReply
                   FROM dialogs
                   WHERE telegramAccountId IN (${idList})
@@ -1210,7 +1216,7 @@ export const appRouter = router({
                     SELECT m1.dialogId, MIN(m2.createdAt) - m1.createdAt as diff
                     FROM messages m1
                     JOIN messages m2 ON m2.dialogId = m1.dialogId AND m2.direction='outgoing' AND m2.createdAt > m1.createdAt
-                    WHERE m1.direction='incoming' AND m1.createdAt >= ${fromTs}
+                    WHERE m1.direction='incoming' AND m1.createdAt >= ${fromTs}${toTs ? sql` AND m1.createdAt < ${toTs}` : sql``}
                     GROUP BY m1.id
                   ) t
                   JOIN dialogs d ON d.id = t.dialogId
@@ -1266,6 +1272,8 @@ export const appRouter = router({
     messagesByDay: protectedProcedure
       .input(z.object({
         period: z.enum(["today", "week", "month", "all"]).default("week"),
+        from: z.string().optional(),
+        to: z.string().optional(),
         accountId: z.number().optional(),
       }))
       .query(async ({ input }) => {
@@ -1273,13 +1281,18 @@ export const appRouter = router({
         if (!db) return [];
         const now = Date.now();
         let fromTs: number | null = null;
-        if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
+        let toTs: number | null = null;
+        if (input.from) {
+          fromTs = new Date(input.from).getTime();
+          if (input.to) toTs = new Date(input.to).getTime() + 86400000;
+        } else if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
         else if (input.period === "week") fromTs = now - 7 * 24 * 60 * 60 * 1000;
         else if (input.period === "month") fromTs = now - 30 * 24 * 60 * 60 * 1000;
         else fromTs = now - 90 * 24 * 60 * 60 * 1000; // "all" = last 90 days max for chart
 
         const conds: any[] = [];
         if (fromTs) conds.push(sql`m.createdAt >= ${new Date(fromTs)}`);
+        if (toTs) conds.push(sql`m.createdAt < ${new Date(toTs)}`);
         if (input.accountId) conds.push(sql`d.telegramAccountId = ${input.accountId}`);
         const whereClause = conds.length > 0 ? sql`WHERE ${sql.join(conds, sql` AND `)}` : sql``;
 
@@ -1305,18 +1318,25 @@ export const appRouter = router({
     dialogsByStatus: protectedProcedure
       .input(z.object({
         period: z.enum(["today", "week", "month", "all"]).default("week"),
+        from: z.string().optional(),
+        to: z.string().optional(),
       }))
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) return [];
         const now = new Date();
         let since: Date | null = null;
-        if (input.period === "today") since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        let until: Date | null = null;
+        if (input.from) {
+          since = new Date(input.from);
+          if (input.to) until = new Date(new Date(input.to).getTime() + 86400000);
+        } else if (input.period === "today") since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         else if (input.period === "week") since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
         else if (input.period === "month") since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
         const conds: any[] = [];
         if (since) conds.push(gte(dialogs.createdAt, since));
+        if (until) conds.push(sql`${dialogs.createdAt} < ${until}`);
         const whereClause = conds.length > 0 ? and(...conds) : undefined;
 
         const rows = await db.select({
@@ -1331,18 +1351,25 @@ export const appRouter = router({
     hourlyActivity: protectedProcedure
       .input(z.object({
         period: z.enum(["today", "week", "month", "all"]).default("week"),
+        from: z.string().optional(),
+        to: z.string().optional(),
       }))
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) return [];
         const now = Date.now();
         let fromTs: number | null = null;
-        if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
+        let toTs: number | null = null;
+        if (input.from) {
+          fromTs = new Date(input.from).getTime();
+          if (input.to) toTs = new Date(input.to).getTime() + 86400000;
+        } else if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
         else if (input.period === "week") fromTs = now - 7 * 24 * 60 * 60 * 1000;
         else if (input.period === "month") fromTs = now - 30 * 24 * 60 * 60 * 1000;
 
         const conds: any[] = [];
         if (fromTs) conds.push(sql`createdAt >= ${new Date(fromTs)}`);
+        if (toTs) conds.push(sql`createdAt < ${new Date(toTs)}`);
         const whereClause = conds.length > 0 ? sql`WHERE ${sql.join(conds, sql` AND `)}` : sql``;
 
         const [rows] = await db.execute(sql`
@@ -1363,19 +1390,26 @@ export const appRouter = router({
     newDialogsByDay: protectedProcedure
       .input(z.object({
         period: z.enum(["today", "week", "month", "all"]).default("week"),
+        from: z.string().optional(),
+        to: z.string().optional(),
       }))
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) return [];
         const now = Date.now();
         let fromTs: number | null = null;
-        if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
+        let toTs: number | null = null;
+        if (input.from) {
+          fromTs = new Date(input.from).getTime();
+          if (input.to) toTs = new Date(input.to).getTime() + 86400000;
+        } else if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
         else if (input.period === "week") fromTs = now - 7 * 24 * 60 * 60 * 1000;
         else if (input.period === "month") fromTs = now - 30 * 24 * 60 * 60 * 1000;
         else fromTs = now - 90 * 24 * 60 * 60 * 1000;
 
         const conds: any[] = [];
         if (fromTs) conds.push(gte(dialogs.createdAt, new Date(fromTs)));
+        if (toTs) conds.push(sql`${dialogs.createdAt} < ${new Date(toTs)}`);
         const whereClause = conds.length > 0 ? and(...conds) : undefined;
 
         const rows = await db.select({
