@@ -1013,10 +1013,15 @@ function ChatView({
 // Contact Panel (Column 3)
 // ═══════════════════════════════════════════════════════════════════════════════
 function ContactPanel({ dialogId, onClose }: { dialogId: number; onClose: () => void }) {
-  const { data: dialogData } = trpc.dialogs.get.useQuery({ id: dialogId });
+  const { data: dialogData, refetch: refetchDialog } = trpc.dialogs.get.useQuery({ id: dialogId });
   const { data: allTags } = trpc.tags.list.useQuery();
   const { data: dialogTagsData, refetch: refetchDialogTags } = trpc.tags.forDialog.useQuery({ dialogId });
   const { data: allUsers } = trpc.users.list.useQuery();
+
+  const summarizeMutation = trpc.dialogs.generateSummary.useMutation({
+    onSuccess: () => { refetchDialog(); toast.success("AI заметка готова"); },
+    onError: () => toast.error("Ошибка генерации"),
+  });
 
   const assignTagMutation = trpc.tags.assign.useMutation({ onSuccess: () => refetchDialogTags() });
   const removeTagMutation = trpc.tags.remove.useMutation({ onSuccess: () => refetchDialogTags() });
@@ -1095,6 +1100,51 @@ function ContactPanel({ dialogId, onClose }: { dialogId: number; onClose: () => 
               #{dialog.bitrixDealId} <ExternalLink className="h-3 w-3" />
             </a>
           </div>
+        )}
+      </div>
+
+      {/* AI Summary Note */}
+      <div className="px-4 py-3 border-b border-border">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1">
+            <Sparkles className="h-3 w-3 text-primary" />
+            AI Заметка
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 gap-1 text-[10px] text-primary hover:text-primary hover:bg-primary/10"
+            onClick={() => summarizeMutation.mutate({ dialogId })}
+            disabled={summarizeMutation.isPending}
+          >
+            {summarizeMutation.isPending ? (
+              <><Loader2 className="h-3 w-3 animate-spin" /> Анализ...</>
+            ) : (
+              <>{dialog?.aiSummary ? <RefreshCw className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />} {dialog?.aiSummary ? "Обновить" : "Сгенерировать"}</>
+            )}
+          </Button>
+        </div>
+        {dialog?.aiSummary ? (
+          <div className="space-y-2">
+            {/* Sentiment badge */}
+            {dialog.sentiment && (
+              <div className="flex items-center gap-1.5">
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                  dialog.sentiment === "positive" ? "bg-green-500/15 text-green-400 border border-green-500/20" :
+                  dialog.sentiment === "negative" ? "bg-red-500/15 text-red-400 border border-red-500/20" :
+                  "bg-blue-500/15 text-blue-400 border border-blue-500/20"
+                }`}>
+                  {dialog.sentiment === "positive" ? "\u{1F7E2} Позитивный" : dialog.sentiment === "negative" ? "\u{1F534} Негативный" : "\u{1F535} Нейтральный"}
+                </span>
+              </div>
+            )}
+            {/* Summary text */}
+            <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line bg-primary/5 rounded-lg p-2.5 border border-primary/10">
+              {dialog.aiSummary}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground/60 italic">Нажмите "Сгенерировать" для AI-анализа диалога</p>
         )}
       </div>
 

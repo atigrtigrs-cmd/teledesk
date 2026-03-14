@@ -379,3 +379,11 @@
 - [x] Added accounts.updateAvatars tRPC procedure for bulk avatar download
 - [x] Fix broken charts: rewrote all 3 charts to SVG with proper scaling, grid lines, tooltips
 - [x] Fix: pass custom date range (from/to) to ALL analytics queries (accountStats, messagesByDay, dialogsByStatus, hourlyActivity, newDialogsByDay)
+
+## AI Мини-аналитика: Саммари диалогов (Mar 14, 2026)
+- [x] aiSummary and sentiment columns already exist in dialogs table (reused existing schema)
+- [x] Enhanced generateSummary tRPC procedure: better LLM prompt with keyTopics, recommendation, sentiment
+- [x] Added "AI Заметка" section in ContactPanel (right sidebar) with sentiment badge and formatted summary
+- [x] Added "Сгенерировать" / "Обновить" button with loading state
+- [x] Summary shows sentiment (positive/neutral/negative) + key topics + recommendation
+- [x] Written 4 vitest tests for AI summary (all 27 tests passing)

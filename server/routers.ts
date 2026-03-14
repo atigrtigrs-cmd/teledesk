@@ -476,14 +476,24 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         const msgs = await db.select().from(messages).where(eq(messages.dialogId, input.dialogId)).orderBy(messages.createdAt);
-        if (!msgs.length) return { summary: "Нет сообщений для анализа", sentiment: "neutral" as const };
+        if (!msgs.length) return { summary: "Нет сообщений для анализа", sentiment: "neutral" as const, tags: [] as string[], keyTopics: "" as string, recommendation: "" as string };
 
-        const transcript = msgs.map(m => `${m.direction === "incoming" ? "Клиент" : "Менеджер"}: ${m.text ?? "[медиа]"}`).join("\n");
+        // Use sender names if available, fall back to direction labels
+        const transcript = msgs.map(m => {
+          const sender = m.senderName || (m.direction === "incoming" ? "Клиент" : "Менеджер");
+          return `${sender}: ${m.text ?? "[медиа]"}`;  
+        }).join("\n");
+
+        // Truncate very long transcripts to ~4000 chars to stay within LLM context
+        const maxLen = 4000;
+        const trimmedTranscript = transcript.length > maxLen
+          ? transcript.slice(0, maxLen) + "\n... [переписка обрезана]"
+          : transcript;
 
         const response = await invokeLLM({
           messages: [
-            { role: "system", content: "Ты помощник для анализа переписок. Отвечай только на русском языке." },
-            { role: "user", content: `Проанализируй переписку и верни JSON с полями: summary (краткое резюме 2-3 предложения), sentiment (positive/neutral/negative), tags (массив из 1-3 тегов на русском).\n\nПереписка:\n${transcript}` },
+            { role: "system", content: `Ты — AI-аналитик CRM-системы для Telegram. Анализируешь переписки менеджеров с клиентами. Отвечай ТОЛЬКО на русском языке. Будь кратким и конкретным.` },
+            { role: "user", content: `Проанализируй переписку и верни JSON:\n- summary: краткое резюме (3-5 предложений) — о чём диалог, что обсуждали, к чему пришли\n- sentiment: настроение клиента (positive/neutral/negative)\n- tags: массив из 1-3 ключевых тегов на русском (например: "оффер", "оплата", "жалоба", "новый клиент")\n- keyTopics: ключевые темы через запятую (что конкретно обсуждали)\n- recommendation: одно предложение — что менеджеру делать дальше (например: "Отправить оффер", "Ждать ответа клиента", "Закрыть диалог")\n\nПереписка:\n${trimmedTranscript}` },
           ],
           response_format: {
             type: "json_schema",
@@ -493,25 +503,34 @@ export const appRouter = router({
               schema: {
                 type: "object",
                 properties: {
-                  summary: { type: "string" },
+                  summary: { type: "string", description: "Краткое резюме диалога 3-5 предложений" },
                   sentiment: { type: "string", enum: ["positive", "neutral", "negative"] },
                   tags: { type: "array", items: { type: "string" } },
+                  keyTopics: { type: "string", description: "Ключевые темы через запятую" },
+                  recommendation: { type: "string", description: "Рекомендация менеджеру — одно предложение" },
                 },
-                required: ["summary", "sentiment", "tags"],
+                required: ["summary", "sentiment", "tags", "keyTopics", "recommendation"],
                 additionalProperties: false,
               },
             },
           },
         });
 
-        let result = { summary: "", sentiment: "neutral" as "positive" | "neutral" | "negative", tags: [] as string[] };
+        let result = { summary: "", sentiment: "neutral" as "positive" | "neutral" | "negative", tags: [] as string[], keyTopics: "", recommendation: "" };
         try {
           const content = response.choices?.[0]?.message?.content;
           result = typeof content === "string" ? JSON.parse(content) : content;
         } catch {}
 
+        // Build a rich note combining all AI insights
+        const aiNote = [
+          result.summary,
+          result.keyTopics ? `\nТемы: ${result.keyTopics}` : "",
+          result.recommendation ? `\nРекомендация: ${result.recommendation}` : "",
+        ].filter(Boolean).join("");
+
         await db.update(dialogs).set({
-          aiSummary: result.summary,
+          aiSummary: aiNote,
           sentiment: result.sentiment,
         }).where(eq(dialogs.id, input.dialogId));
 
