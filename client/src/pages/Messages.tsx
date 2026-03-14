@@ -197,6 +197,42 @@ function AvatarWithFallback({ contact, name, size = "sm", className = "" }: {
 }
 
 // ─── Main Component ─────────────────────────────────────────────────────────
+// ─── Resize Hook ───────────────────────────────────────────────────────────
+function useResizable(initialWidth: number, minWidth: number, maxWidth: number) {
+  const [width, setWidth] = useState(initialWidth);
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true;
+    startX.current = e.clientX;
+    startWidth.current = width;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = ev.clientX - startX.current;
+      const newWidth = Math.min(maxWidth, Math.max(minWidth, startWidth.current + delta));
+      setWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [width, minWidth, maxWidth]);
+
+  return { width, onMouseDown };
+}
+
 export default function Messages() {
   const { user } = useAuth();
   const [selectedDialogId, setSelectedDialogId] = useState<number | null>(null);
@@ -205,6 +241,7 @@ export default function Messages() {
   const [search, setSearch] = useState("");
   const [selectedAccountId, setSelectedAccountId] = useState<number | undefined>(undefined);
   const [showFilters, setShowFilters] = useState(false);
+  const { width: dialogListWidth, onMouseDown: onResizeStart } = useResizable(320, 220, 600);
 
   // SSE real-time
   const { connectionState } = useRealtimeInbox(selectedDialogId ?? undefined);
@@ -246,7 +283,16 @@ export default function Messages() {
         connectionState={connectionState}
         onSync={() => syncAll.mutate()}
         isSyncing={syncAll.isPending}
+        width={dialogListWidth}
       />
+
+      {/* ── Resize Handle ── */}
+      <div
+        onMouseDown={onResizeStart}
+        className="w-1 shrink-0 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors relative group"
+      >
+        <div className="absolute inset-y-0 -left-1 -right-1" />
+      </div>
 
       {/* ── Column 2: Chat View ── */}
       {selectedDialogId ? (
@@ -296,6 +342,7 @@ function DialogList({
   connectionState,
   onSync,
   isSyncing,
+  width,
 }: {
   dialogs: any[];
   loading: boolean;
@@ -313,9 +360,10 @@ function DialogList({
   connectionState: string;
   onSync: () => void;
   isSyncing: boolean;
+  width?: number;
 }) {
   return (
-    <div className="w-[320px] shrink-0 border-r border-border flex flex-col bg-[oklch(0.11_0.006_240)]">
+    <div style={{ width: width ?? 320 }} className="shrink-0 border-r border-border flex flex-col bg-[oklch(0.11_0.006_240)]">
       {/* Header */}
       <div className="px-3 pt-3 pb-2 shrink-0">
         <div className="flex items-center justify-between mb-2">
@@ -492,7 +540,9 @@ function ChatView({
   const [inputMode, setInputMode] = useState<InputMode>("message");
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMsgCountRef = useRef(0);
+  const isInitialLoadRef = useRef(true);
 
   const { data: dialogData, refetch: refetchDialog } = trpc.dialogs.get.useQuery({ id: dialogId });
   const { data: msgs, refetch: refetchMsgs } = trpc.messages.list.useQuery({ dialogId });
@@ -522,23 +572,34 @@ function ChatView({
     onError: () => toast.error("Ошибка анализа"),
   });
 
-  // Auto-scroll on new messages
-  useEffect(() => {
-    if (!msgs) return;
-    if (msgs.length > prevMsgCountRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-    prevMsgCountRef.current = msgs.length;
-  }, [msgs]);
-
-  // Reset on dialog change
+  // Reset on dialog change — mark as initial load
   useEffect(() => {
     setText("");
     setNoteText("");
     setInputMode("message");
     setShowQuickReplies(false);
     prevMsgCountRef.current = 0;
+    isInitialLoadRef.current = true;
   }, [dialogId]);
+
+  // Scroll: instant on first load, smooth on new messages
+  useEffect(() => {
+    if (!msgs) return;
+    if (isInitialLoadRef.current) {
+      // First load — instant jump to bottom, no animation
+      requestAnimationFrame(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+        }
+      });
+      isInitialLoadRef.current = false;
+      prevMsgCountRef.current = msgs.length;
+    } else if (msgs.length > prevMsgCountRef.current) {
+      // New message arrived — smooth scroll
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      prevMsgCountRef.current = msgs.length;
+    }
+  }, [msgs]);
 
   const dialog = dialogData?.dialog;
   const contact = dialogData?.contact;
@@ -702,7 +763,9 @@ function ChatView({
                     <div className="max-w-[80%] px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-start gap-2">
                       <StickyNote className="h-3 w-3 shrink-0 mt-0.5 text-amber-400" />
                       <div>
-                        <p className="font-semibold text-amber-400 text-[10px]">Заметка</p>
+                        <p className="font-semibold text-amber-400 text-[10px]">
+                          Заметка {msg.senderName ? `· ${msg.senderName}` : ""}
+                        </p>
                         <p className="leading-relaxed">{msg.text}</p>
                         <p className="mt-0.5 opacity-60 text-[10px]">{new Date(msg.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</p>
                       </div>
@@ -712,14 +775,25 @@ function ChatView({
               );
             }
 
-            const senderLabel = isOutgoing ? null : (msg as any).senderName || contactName;
+            // Determine sender label
+            const senderLabel = isOutgoing
+              ? (msg.senderName || account?.username ? `@${account?.username}` : null)
+              : (msg.senderName || contactName);
+
+            // Show sender name if it differs from previous message's sender
+            const prevSender = prevMsg ? (prevMsg.direction === msg.direction ? prevMsg.senderName : null) : null;
+            const showSender = senderLabel && (idx === 0 || showDateSep || prevMsg?.direction !== msg.direction || prevMsg?.senderName !== msg.senderName);
 
             return (
               <div key={msg.id}>
                 {showDateSep && <DateSeparator date={msg.createdAt} />}
                 <div className={`flex flex-col ${isOutgoing ? "items-end" : "items-start"}`}>
-                  {!isOutgoing && senderLabel && (
-                    <span className="text-[10px] text-muted-foreground font-medium mb-0.5 px-1">{senderLabel}</span>
+                  {showSender && senderLabel && (
+                    <span className={`text-[10px] font-medium mb-0.5 px-1 ${
+                      isOutgoing ? "text-primary/60" : "text-muted-foreground"
+                    }`}>
+                      {senderLabel}
+                    </span>
                   )}
                   <div className={`max-w-[70%] px-3 py-2 rounded-2xl text-sm leading-relaxed ${
                     isOutgoing

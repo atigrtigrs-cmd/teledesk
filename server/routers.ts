@@ -559,6 +559,7 @@ export const appRouter = router({
           dialogId: input.dialogId,
           direction: "outgoing",
           senderId: ctx.user.id,
+          senderName: ctx.user.name ?? ctx.user.email ?? `User #${ctx.user.id}`,
           text: input.text,
           isRead: true,
         });
@@ -591,6 +592,7 @@ export const appRouter = router({
           dialogId: input.dialogId,
           direction: "note",
           senderId: ctx.user.id,
+          senderName: ctx.user.name ?? ctx.user.email ?? `User #${ctx.user.id}`,
           text: input.text,
           isRead: true,
         });
@@ -1198,6 +1200,130 @@ export const appRouter = router({
         });
 
         return { stats, period: input.period };
+      }),
+
+    // Messages per day chart data
+    messagesByDay: protectedProcedure
+      .input(z.object({
+        period: z.enum(["today", "week", "month", "all"]).default("week"),
+        accountId: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const now = Date.now();
+        let fromTs: number | null = null;
+        if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
+        else if (input.period === "week") fromTs = now - 7 * 24 * 60 * 60 * 1000;
+        else if (input.period === "month") fromTs = now - 30 * 24 * 60 * 60 * 1000;
+        else fromTs = now - 90 * 24 * 60 * 60 * 1000; // "all" = last 90 days max for chart
+
+        const conds: any[] = [];
+        if (fromTs) conds.push(sql`m.createdAt >= ${new Date(fromTs)}`);
+        if (input.accountId) conds.push(sql`d.telegramAccountId = ${input.accountId}`);
+        const whereClause = conds.length > 0 ? sql`WHERE ${sql.join(conds, sql` AND `)}` : sql``;
+
+        const [rows] = await db.execute(sql`
+          SELECT DATE(m.createdAt) as day,
+            SUM(CASE WHEN m.direction='incoming' THEN 1 ELSE 0 END) as incoming,
+            SUM(CASE WHEN m.direction='outgoing' THEN 1 ELSE 0 END) as outgoing
+          FROM messages m
+          JOIN dialogs d ON d.id = m.dialogId
+          ${whereClause}
+          GROUP BY DATE(m.createdAt)
+          ORDER BY day ASC
+        `) as any;
+
+        return (rows as any[]).map(r => ({
+          day: String(r.day),
+          incoming: Number(r.incoming ?? 0),
+          outgoing: Number(r.outgoing ?? 0),
+        }));
+      }),
+
+    // Dialogs by status (pie chart data)
+    dialogsByStatus: protectedProcedure
+      .input(z.object({
+        period: z.enum(["today", "week", "month", "all"]).default("week"),
+      }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const now = new Date();
+        let since: Date | null = null;
+        if (input.period === "today") since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        else if (input.period === "week") since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        else if (input.period === "month") since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        const conds: any[] = [];
+        if (since) conds.push(gte(dialogs.createdAt, since));
+        const whereClause = conds.length > 0 ? and(...conds) : undefined;
+
+        const rows = await db.select({
+          status: dialogs.status,
+          count: count(),
+        }).from(dialogs).where(whereClause).groupBy(dialogs.status);
+
+        return rows.map(r => ({ status: r.status, count: Number(r.count) }));
+      }),
+
+    // Hourly activity heatmap
+    hourlyActivity: protectedProcedure
+      .input(z.object({
+        period: z.enum(["today", "week", "month", "all"]).default("week"),
+      }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const now = Date.now();
+        let fromTs: number | null = null;
+        if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
+        else if (input.period === "week") fromTs = now - 7 * 24 * 60 * 60 * 1000;
+        else if (input.period === "month") fromTs = now - 30 * 24 * 60 * 60 * 1000;
+
+        const conds: any[] = [];
+        if (fromTs) conds.push(sql`createdAt >= ${new Date(fromTs)}`);
+        const whereClause = conds.length > 0 ? sql`WHERE ${sql.join(conds, sql` AND `)}` : sql``;
+
+        const [rows] = await db.execute(sql`
+          SELECT HOUR(createdAt) as hour, COUNT(*) as count
+          FROM messages
+          ${whereClause}
+          GROUP BY HOUR(createdAt)
+          ORDER BY hour ASC
+        `) as any;
+
+        return (rows as any[]).map(r => ({
+          hour: Number(r.hour),
+          count: Number(r.count ?? 0),
+        }));
+      }),
+
+    // New dialogs per day
+    newDialogsByDay: protectedProcedure
+      .input(z.object({
+        period: z.enum(["today", "week", "month", "all"]).default("week"),
+      }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const now = Date.now();
+        let fromTs: number | null = null;
+        if (input.period === "today") fromTs = new Date().setHours(0, 0, 0, 0);
+        else if (input.period === "week") fromTs = now - 7 * 24 * 60 * 60 * 1000;
+        else if (input.period === "month") fromTs = now - 30 * 24 * 60 * 60 * 1000;
+        else fromTs = now - 90 * 24 * 60 * 60 * 1000;
+
+        const conds: any[] = [];
+        if (fromTs) conds.push(gte(dialogs.createdAt, new Date(fromTs)));
+        const whereClause = conds.length > 0 ? and(...conds) : undefined;
+
+        const rows = await db.select({
+          day: sql<string>`DATE(${dialogs.createdAt})`,
+          count: count(),
+        }).from(dialogs).where(whereClause).groupBy(sql`DATE(${dialogs.createdAt})`).orderBy(sql`DATE(${dialogs.createdAt})`);
+
+        return rows.map(r => ({ day: String(r.day), count: Number(r.count) }));
       }),
   }),
 

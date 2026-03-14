@@ -352,4 +352,12 @@
 - [x] Update Contacts page: show real avatar
 - [x] Fallback to colored initials when no avatar (AvatarWithFallback component)
 - [x] All 23 tests passing
-- [ ] Push to GitHub and deploy to Render
+- [x] Push to GitHub and deploy to Render (build in progress)
+
+## Show Message Author in Chat (Mar 14, 2026)
+- [x] Show sender name on each message bubble (manager name or contact name)
+- [x] Show which account sent outgoing messages (if multiple accounts)
+- [ ] Deploy to GitHub and Render
+- [x] Fix: instant scroll to bottom on dialog open (no animated scroll through history)
+- [x] Resizable dialog list column (drag to resize width)
+- [x] Expand analytics: charts (messages by day, dialogs by status, hourly activity, new dialogs by day), 8 KPI cards, totals row, efficiency bars
