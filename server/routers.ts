@@ -20,7 +20,7 @@ import { eq, desc, and, sql, gte, count, countDistinct, inArray } from "drizzle-
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
-import { startQRLogin, disconnectAccount, sendTelegramMessage, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, verifyQRTwoFAPassword, connectAccount } from "./telegram";
+import { startQRLogin, disconnectAccount, sendTelegramMessage, startPhoneLogin, verifyPhoneCode, verifyTwoFAPassword, verifyQRTwoFAPassword, connectAccount, bulkUpdateAvatars } from "./telegram";
 import { ENV } from "./_core/env";
 
 const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
@@ -274,6 +274,12 @@ export const appRouter = router({
           synced: 0,
           errors: 0,
         };
+      }),
+
+    updateAvatars: protectedProcedure
+      .mutation(async () => {
+        const result = await bulkUpdateAvatars();
+        return result;
       }),
 
     syncProgress: protectedProcedure.query(async () => {

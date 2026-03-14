@@ -13,7 +13,7 @@ import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { getDb } from "./db";
 import { telegramAccounts, dialogs, messages, contacts, Dialog } from "../drizzle/schema";
-import { eq, and, desc, inArray, gt, isNotNull } from "drizzle-orm";
+import { eq, and, desc, inArray, gt, isNotNull, sql } from "drizzle-orm";
 import { createBitrixDeal, addBitrixTimelineComment } from "./bitrix";
 import { invokeLLM } from "./_core/llm";
 import { emitInboxEvent } from "./sse";
@@ -1411,4 +1411,79 @@ export async function forceSyncAll(): Promise<{ synced: number; errors: number; 
   emitInboxEvent({ type: "sync_complete", totalSynced, totalErrors, accounts: results });
 
   return { synced: totalSynced, errors: totalErrors, accounts: results };
+}
+
+/**
+ * Bulk update avatars for all contacts that don't have one yet.
+ * Uses active TG clients to download profile photos.
+ */
+export async function bulkUpdateAvatars(): Promise<{ updated: number; skipped: number; errors: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("No database connection");
+
+  // Get contacts without avatars
+  const contactsWithoutAvatar = await db.select({
+    id: contacts.id,
+    telegramId: contacts.telegramId,
+  }).from(contacts).where(
+    sql`${contacts.avatarUrl} IS NULL OR ${contacts.avatarUrl} = ''`
+  );
+
+  if (contactsWithoutAvatar.length === 0) {
+    return { updated: 0, skipped: 0, errors: 0 };
+  }
+
+  console.log(`[BulkAvatars] Starting for ${contactsWithoutAvatar.length} contacts without avatars`);
+
+  // Get any active client to use for downloading
+  const clientEntries = Array.from(activeClients.entries());
+  if (clientEntries.length === 0) {
+    throw new Error("No active Telegram clients available");
+  }
+
+  let updated = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  // Clear the avatar download cache so we can re-try
+  avatarDownloadedSet.clear();
+
+  for (const contact of contactsWithoutAvatar) {
+    try {
+      // Try each client until one works
+      let avatarUrl: string | null = null;
+      for (const [, client] of clientEntries) {
+        try {
+          const entity = await client.getEntity(contact.telegramId).catch(() => null);
+          if (entity) {
+            avatarUrl = await downloadAndStoreAvatar(client, entity, contact.telegramId);
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      if (avatarUrl) {
+        await db.update(contacts).set({ avatarUrl }).where(eq(contacts.id, contact.id));
+        updated++;
+      } else {
+        skipped++;
+      }
+
+      // Rate limit: small delay
+      if ((updated + skipped + errors) % 10 === 0) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+    } catch (err: any) {
+      errors++;
+      if (errors > 50) {
+        console.warn(`[BulkAvatars] Too many errors (${errors}), stopping`);
+        break;
+      }
+    }
+  }
+
+  console.log(`[BulkAvatars] Done: ${updated} updated, ${skipped} skipped, ${errors} errors`);
+  return { updated, skipped, errors };
 }

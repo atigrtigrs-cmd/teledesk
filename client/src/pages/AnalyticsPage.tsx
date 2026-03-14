@@ -53,7 +53,7 @@ export default function AnalyticsPage() {
 
   const { data: summary, isLoading: summaryLoading } = trpc.analytics.summaryByPeriod.useQuery(queryParams);
   const { data: accountStats } = trpc.analytics.accountStats.useQuery({ period: queryParams.period });
-  const { data: managerStats } = trpc.analytics.managerUserStats.useQuery({ period: queryParams.period });
+  // managerStats removed — accounts table IS the managers table
   const { data: messagesByDay } = trpc.analytics.messagesByDay.useQuery({ period: queryParams.period });
   const { data: dialogsByStatus } = trpc.analytics.dialogsByStatus.useQuery({ period: queryParams.period });
   const { data: hourlyActivity } = trpc.analytics.hourlyActivity.useQuery({ period: queryParams.period });
@@ -244,56 +244,75 @@ export default function AnalyticsPage() {
           </Card>
         </div>
 
-        {/* Account Stats Table */}
+        {/* Менеджеры (ТГ аккаунты) — единая таблица */}
         {accountStats?.stats && accountStats.stats.length > 0 && (
           <Card className="bg-card border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">Статистика по аккаунтам</CardTitle>
+              <CardTitle className="text-sm font-semibold">Менеджеры</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground text-xs">
-                      <th className="text-left py-2 pr-4 font-medium">Аккаунт</th>
                       <th className="text-left py-2 pr-4 font-medium">Менеджер</th>
                       <th className="text-right py-2 pr-4 font-medium">Диалоги</th>
                       <th className="text-right py-2 pr-4 font-medium">Отправлено</th>
                       <th className="text-right py-2 pr-4 font-medium">Получено</th>
-                      <th className="text-right py-2 pr-4 font-medium">Ответить</th>
-                      <th className="text-right py-2 font-medium">Ср. ответ</th>
+                      <th className="text-right py-2 pr-4 font-medium">Нужен ответ</th>
+                      <th className="text-right py-2 pr-4 font-medium">Ср. ответ</th>
+                      <th className="text-right py-2 font-medium">Нагрузка</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {accountStats.stats.map((acc) => (
-                      <tr key={acc.accountId} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                        <td className="py-2.5 pr-4">
-                          <div className="flex items-center gap-2">
-                            <div className={`h-2 w-2 rounded-full ${acc.status === "active" ? "bg-green-400" : "bg-muted-foreground"}`} />
-                            <span className="font-medium">
-                              {acc.username ? `@${acc.username}` : acc.firstName ?? `#${acc.accountId}`}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-2.5 pr-4 text-muted-foreground">{acc.managerName ?? "—"}</td>
-                        <td className="py-2.5 pr-4 text-right tabular-nums">{acc.newDialogs}</td>
-                        <td className="py-2.5 pr-4 text-right tabular-nums text-green-400">{acc.sent}</td>
-                        <td className="py-2.5 pr-4 text-right tabular-nums text-blue-400">{acc.received}</td>
-                        <td className="py-2.5 pr-4 text-right">
-                          {acc.needsReply > 0 ? (
-                            <span className="text-red-400 font-semibold">{acc.needsReply}</span>
-                          ) : (
-                            <span className="text-muted-foreground">0</span>
-                          )}
-                        </td>
-                        <td className="py-2.5 text-right tabular-nums text-muted-foreground">
-                          {acc.avgResponseMs > 0 ? `${Math.round(acc.avgResponseMs / 60000)} мин` : "—"}
-                        </td>
-                      </tr>
-                    ))}
+                    {accountStats.stats.map((acc) => {
+                      const total = acc.sent + acc.received;
+                      const maxTotal = Math.max(...accountStats.stats.map(a => a.sent + a.received), 1);
+                      const loadPct = Math.round((total / maxTotal) * 100);
+                      const managerLabel = [acc.firstName, acc.lastName].filter(Boolean).join(" ") || acc.managerName;
+                      return (
+                        <tr key={acc.accountId} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                          <td className="py-2.5 pr-4">
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <div className={`h-2 w-2 rounded-full ${acc.status === "active" ? "bg-green-400" : "bg-muted-foreground"}`} />
+                                <span className="font-medium">{managerLabel || "—"}</span>
+                              </div>
+                              <span className="text-xs text-muted-foreground ml-4">
+                                {acc.username ? `@${acc.username}` : `#${acc.accountId}`}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 pr-4 text-right tabular-nums">{acc.newDialogs}</td>
+                          <td className="py-2.5 pr-4 text-right tabular-nums text-green-400">{acc.sent}</td>
+                          <td className="py-2.5 pr-4 text-right tabular-nums text-blue-400">{acc.received}</td>
+                          <td className="py-2.5 pr-4 text-right">
+                            {acc.needsReply > 0 ? (
+                              <span className="text-red-400 font-semibold">{acc.needsReply}</span>
+                            ) : (
+                              <span className="text-muted-foreground">0</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 pr-4 text-right tabular-nums text-muted-foreground">
+                            {acc.avgResponseMs > 0 ? `${Math.round(acc.avgResponseMs / 60000)} мин` : "—"}
+                          </td>
+                          <td className="py-2.5 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${loadPct >= 50 ? "bg-primary" : "bg-primary/60"}`}
+                                  style={{ width: `${loadPct}%` }}
+                                />
+                              </div>
+                              <span className="text-xs tabular-nums w-8 text-right text-muted-foreground">{loadPct}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {/* Totals row */}
                     <tr className="border-t-2 border-border font-semibold">
-                      <td className="py-2.5 pr-4" colSpan={2}>Итого</td>
+                      <td className="py-2.5 pr-4">Итого</td>
                       <td className="py-2.5 pr-4 text-right tabular-nums">
                         {accountStats.stats.reduce((s, a) => s + a.newDialogs, 0)}
                       </td>
@@ -306,64 +325,11 @@ export default function AnalyticsPage() {
                       <td className="py-2.5 pr-4 text-right tabular-nums text-red-400">
                         {totalNeedsReply}
                       </td>
-                      <td className="py-2.5 text-right tabular-nums text-muted-foreground">
+                      <td className="py-2.5 pr-4 text-right tabular-nums text-muted-foreground">
                         {avgResponse ? `${avgResponse} мин` : "—"}
                       </td>
+                      <td className="py-2.5 text-right" />
                     </tr>
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Manager Stats Table */}
-        {managerStats && managerStats.length > 0 && (
-          <Card className="bg-card border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">Эффективность менеджеров</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-muted-foreground text-xs">
-                      <th className="text-left py-2 pr-4 font-medium">Менеджер</th>
-                      <th className="text-right py-2 pr-4 font-medium">Назначено</th>
-                      <th className="text-right py-2 pr-4 font-medium">Открытые</th>
-                      <th className="text-right py-2 pr-4 font-medium">Закрытые</th>
-                      <th className="text-right py-2 pr-4 font-medium">Отправлено</th>
-                      <th className="text-right py-2 pr-4 font-medium">Ср. ответ</th>
-                      <th className="text-right py-2 font-medium">Эффективность</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {managerStats.map((m) => {
-                      const efficiency = m.assigned > 0 ? Math.round((m.closed / m.assigned) * 100) : 0;
-                      return (
-                        <tr key={m.userId} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                          <td className="py-2.5 pr-4 font-medium">{m.name}</td>
-                          <td className="py-2.5 pr-4 text-right tabular-nums">{m.assigned}</td>
-                          <td className="py-2.5 pr-4 text-right tabular-nums text-blue-400">{m.open}</td>
-                          <td className="py-2.5 pr-4 text-right tabular-nums text-green-400">{m.closed}</td>
-                          <td className="py-2.5 pr-4 text-right tabular-nums">{m.sentMessages}</td>
-                          <td className="py-2.5 pr-4 text-right tabular-nums text-muted-foreground">
-                            {m.avgResponseMinutes != null ? `${m.avgResponseMinutes} мин` : "—"}
-                          </td>
-                          <td className="py-2.5 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full ${efficiency >= 70 ? "bg-green-400" : efficiency >= 40 ? "bg-amber-400" : "bg-red-400"}`}
-                                  style={{ width: `${Math.min(100, efficiency)}%` }}
-                                />
-                              </div>
-                              <span className="text-xs tabular-nums w-8 text-right">{efficiency}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
                   </tbody>
                 </table>
               </div>
@@ -398,48 +364,66 @@ function KpiCard({
   );
 }
 
-// ─── Bar Chart (Messages by Day) ─────────────────────────────────────────────
+// ─── Bar Chart (Messages by Day) — SVG ──────────────────────────────────────
 function BarChartSimple({ data }: { data: { day: string; incoming: number; outgoing: number }[] }) {
   const maxVal = useMemo(() => Math.max(...data.map(d => d.incoming + d.outgoing), 1), [data]);
+  const [tooltip, setTooltip] = useState<{ x: number; d: typeof data[0] } | null>(null);
 
-  // Show max 14 labels for readability
+  const chartH = 180;
+  const chartW = 700;
+  const barGap = 2;
+  const labelH = 20;
   const showEvery = Math.max(1, Math.ceil(data.length / 14));
+  const barW = Math.max(4, (chartW - barGap * data.length) / data.length);
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
-        <div className="flex items-center gap-1.5">
-          <div className="h-2.5 w-2.5 rounded-sm bg-blue-400" />
-          <span>Входящие</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="h-2.5 w-2.5 rounded-sm bg-primary" />
-          <span>Исходящие</span>
-        </div>
+      <div className="flex items-center gap-4 text-xs text-muted-foreground mb-1">
+        <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-sm bg-blue-400" /><span>Входящие</span></div>
+        <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-sm bg-primary" /><span>Исходящие</span></div>
       </div>
-      <div className="flex items-end gap-[2px] h-48">
-        {data.map((d, i) => {
-          const inH = (d.incoming / maxVal) * 100;
-          const outH = (d.outgoing / maxVal) * 100;
-          const dayLabel = d.day.slice(5); // MM-DD
-          return (
-            <div key={d.day} className="flex-1 flex flex-col items-center group relative">
-              {/* Tooltip */}
-              <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-popover text-popover-foreground border border-border rounded-lg px-2.5 py-1.5 text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
-                <p className="font-semibold">{d.day}</p>
-                <p className="text-blue-400">Вход: {d.incoming}</p>
-                <p className="text-primary">Исход: {d.outgoing}</p>
-              </div>
-              <div className="w-full flex flex-col items-center gap-[1px]">
-                <div className="w-full rounded-t-sm bg-primary transition-all" style={{ height: `${outH}%`, minHeight: d.outgoing > 0 ? 2 : 0 }} />
-                <div className="w-full rounded-b-sm bg-blue-400 transition-all" style={{ height: `${inH}%`, minHeight: d.incoming > 0 ? 2 : 0 }} />
-              </div>
-              {i % showEvery === 0 && (
-                <span className="text-[9px] text-muted-foreground mt-1 rotate-0">{dayLabel}</span>
-              )}
-            </div>
-          );
-        })}
+      <div className="relative">
+        <svg viewBox={`0 0 ${chartW} ${chartH + labelH}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
+          {/* Grid lines */}
+          {[0.25, 0.5, 0.75, 1].map(pct => (
+            <line key={pct} x1={0} y1={chartH * (1 - pct)} x2={chartW} y2={chartH * (1 - pct)} stroke="currentColor" className="text-border" strokeWidth={0.5} strokeDasharray="4 4" />
+          ))}
+          {data.map((d, i) => {
+            const x = i * (barW + barGap);
+            const totalH = ((d.incoming + d.outgoing) / maxVal) * chartH;
+            const outH = (d.outgoing / maxVal) * chartH;
+            const inH = (d.incoming / maxVal) * chartH;
+            return (
+              <g key={d.day}
+                onMouseEnter={() => setTooltip({ x: x + barW / 2, d })}
+                onMouseLeave={() => setTooltip(null)}
+                className="cursor-pointer"
+              >
+                {/* Outgoing (bottom) */}
+                <rect x={x} y={chartH - totalH} width={barW} height={outH} rx={1.5}
+                  className="fill-primary" opacity={0.9} />
+                {/* Incoming (top of stack) */}
+                <rect x={x} y={chartH - inH} width={barW} height={inH} rx={1.5}
+                  className="fill-blue-400" opacity={0.85} />
+                {/* Label */}
+                {i % showEvery === 0 && (
+                  <text x={x + barW / 2} y={chartH + 14} textAnchor="middle" className="fill-muted-foreground" fontSize={9}>
+                    {d.day.slice(5)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+        {/* Tooltip overlay */}
+        {tooltip && (
+          <div className="absolute top-0 bg-popover text-popover-foreground border border-border rounded-lg px-2.5 py-1.5 text-[10px] whitespace-nowrap pointer-events-none z-10 shadow-lg"
+            style={{ left: `${(tooltip.x / chartW) * 100}%`, transform: 'translateX(-50%)' }}>
+            <p className="font-semibold">{tooltip.d.day}</p>
+            <p className="text-blue-400">Вход: {tooltip.d.incoming.toLocaleString()}</p>
+            <p style={{ color: 'oklch(0.75 0.18 55)' }}>Исход: {tooltip.d.outgoing.toLocaleString()}</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -478,71 +462,105 @@ function StatusBreakdown({ data }: { data: { status: string; count: number }[] }
   );
 }
 
-// ─── Hourly Activity Chart ───────────────────────────────────────────────────
+// ─── Hourly Activity Chart — SVG ────────────────────────────────────────────
 function HourlyChart({ data }: { data: { hour: number; count: number }[] }) {
-  // Fill all 24 hours
   const hours = useMemo(() => {
     const map = new Map(data.map(d => [d.hour, d.count]));
     return Array.from({ length: 24 }, (_, i) => ({ hour: i, count: map.get(i) ?? 0 }));
   }, [data]);
-
   const maxVal = useMemo(() => Math.max(...hours.map(h => h.count), 1), [hours]);
+  const [hovered, setHovered] = useState<number | null>(null);
+
+  const chartH = 140;
+  const chartW = 500;
+  const barW = (chartW - 24 * 2) / 24;
+  const labelH = 18;
 
   return (
-    <div className="flex items-end gap-[2px] h-40">
-      {hours.map(h => {
-        const height = (h.count / maxVal) * 100;
-        const intensity = h.count / maxVal;
-        return (
-          <div key={h.hour} className="flex-1 flex flex-col items-center group relative">
-            <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-popover text-popover-foreground border border-border rounded-lg px-2 py-1 text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
-              <p className="font-semibold">{h.hour}:00</p>
-              <p>{h.count} сообщ.</p>
-            </div>
-            <div
-              className="w-full rounded-t-sm transition-all"
-              style={{
-                height: `${height}%`,
-                minHeight: h.count > 0 ? 2 : 0,
-                backgroundColor: `oklch(${0.65 + intensity * 0.15} ${0.15 + intensity * 0.1} 30)`,
-              }}
-            />
-            {h.hour % 3 === 0 && (
-              <span className="text-[9px] text-muted-foreground mt-1">{h.hour}</span>
-            )}
-          </div>
-        );
-      })}
+    <div className="relative">
+      <svg viewBox={`0 0 ${chartW} ${chartH + labelH}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
+        {[0.25, 0.5, 0.75, 1].map(pct => (
+          <line key={pct} x1={0} y1={chartH * (1 - pct)} x2={chartW} y2={chartH * (1 - pct)} stroke="currentColor" className="text-border" strokeWidth={0.5} strokeDasharray="4 4" />
+        ))}
+        {hours.map((h, i) => {
+          const x = i * (barW + 2);
+          const barH = (h.count / maxVal) * chartH;
+          const intensity = h.count / maxVal;
+          return (
+            <g key={h.hour}
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered(null)}
+              className="cursor-pointer"
+            >
+              <rect x={x} y={chartH - barH} width={barW} height={barH} rx={2}
+                fill={`oklch(${0.65 + intensity * 0.15} ${0.15 + intensity * 0.1} 30)`}
+                opacity={hovered === i ? 1 : 0.85}
+              />
+              {h.hour % 3 === 0 && (
+                <text x={x + barW / 2} y={chartH + 13} textAnchor="middle" className="fill-muted-foreground" fontSize={9}>
+                  {h.hour}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      {hovered !== null && (
+        <div className="absolute top-0 bg-popover text-popover-foreground border border-border rounded-lg px-2 py-1 text-[10px] whitespace-nowrap pointer-events-none z-10 shadow-lg"
+          style={{ left: `${((hovered * (barW + 2) + barW / 2) / chartW) * 100}%`, transform: 'translateX(-50%)' }}>
+          <p className="font-semibold">{hours[hovered].hour}:00</p>
+          <p>{hours[hovered].count.toLocaleString()} сообщ.</p>
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── New Dialogs by Day Chart ────────────────────────────────────────────────
+// ─── New Dialogs by Day Chart — SVG ─────────────────────────────────────────
 function NewDialogsChart({ data }: { data: { day: string; count: number }[] }) {
   const maxVal = useMemo(() => Math.max(...data.map(d => d.count), 1), [data]);
+  const [tooltip, setTooltip] = useState<{ x: number; d: typeof data[0] } | null>(null);
+
+  const chartH = 140;
+  const chartW = 500;
+  const barGap = 2;
   const showEvery = Math.max(1, Math.ceil(data.length / 14));
+  const barW = Math.max(4, (chartW - barGap * data.length) / data.length);
+  const labelH = 18;
 
   return (
-    <div className="flex items-end gap-[2px] h-40">
-      {data.map((d, i) => {
-        const height = (d.count / maxVal) * 100;
-        const dayLabel = d.day.slice(5);
-        return (
-          <div key={d.day} className="flex-1 flex flex-col items-center group relative">
-            <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-popover text-popover-foreground border border-border rounded-lg px-2 py-1 text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
-              <p className="font-semibold">{d.day}</p>
-              <p>{d.count} диалогов</p>
-            </div>
-            <div
-              className="w-full rounded-t-sm bg-emerald-400 transition-all"
-              style={{ height: `${height}%`, minHeight: d.count > 0 ? 2 : 0 }}
-            />
-            {i % showEvery === 0 && (
-              <span className="text-[9px] text-muted-foreground mt-1">{dayLabel}</span>
-            )}
-          </div>
-        );
-      })}
+    <div className="relative">
+      <svg viewBox={`0 0 ${chartW} ${chartH + labelH}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
+        {[0.25, 0.5, 0.75, 1].map(pct => (
+          <line key={pct} x1={0} y1={chartH * (1 - pct)} x2={chartW} y2={chartH * (1 - pct)} stroke="currentColor" className="text-border" strokeWidth={0.5} strokeDasharray="4 4" />
+        ))}
+        {data.map((d, i) => {
+          const x = i * (barW + barGap);
+          const barH = (d.count / maxVal) * chartH;
+          return (
+            <g key={d.day}
+              onMouseEnter={() => setTooltip({ x: x + barW / 2, d })}
+              onMouseLeave={() => setTooltip(null)}
+              className="cursor-pointer"
+            >
+              <rect x={x} y={chartH - barH} width={barW} height={barH} rx={1.5}
+                className="fill-emerald-400" opacity={0.85} />
+              {i % showEvery === 0 && (
+                <text x={x + barW / 2} y={chartH + 13} textAnchor="middle" className="fill-muted-foreground" fontSize={9}>
+                  {d.day.slice(5)}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      {tooltip && (
+        <div className="absolute top-0 bg-popover text-popover-foreground border border-border rounded-lg px-2 py-1 text-[10px] whitespace-nowrap pointer-events-none z-10 shadow-lg"
+          style={{ left: `${(tooltip.x / chartW) * 100}%`, transform: 'translateX(-50%)' }}>
+          <p className="font-semibold">{tooltip.d.day}</p>
+          <p>{tooltip.d.count} диалогов</p>
+        </div>
+      )}
     </div>
   );
 }

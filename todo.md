@@ -370,3 +370,11 @@
 - [ ] Hide managers with zero activity or show only active ones
 - [x] Redesign dialog filters: compact toggles, better UX (account, assignee, tag filters + badge count)
 - [x] Hide supergroups and channels toggle in dialog list ("Только личные чаты" toggle, default on)
+
+## Analytics: Merge Tables + Manager Names + Avatars (Mar 14, 2026)
+- [x] Merge account stats and manager stats into single "Менеджеры" table
+- [x] Remove "Эффективность менеджеров" table (system users with zeros)
+- [x] Assign manager names to TG accounts via DB update (firstName/lastName)
+- [ ] Fix avatars not showing in dialog list (0/1468 have avatarUrl — need bulk update on Render)
+- [x] Added accounts.updateAvatars tRPC procedure for bulk avatar download
+- [x] Fix broken charts: rewrote all 3 charts to SVG with proper scaling, grid lines, tooltips

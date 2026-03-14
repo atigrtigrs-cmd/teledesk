@@ -1,0 +1,34 @@
+{
+  "query": "SELECT id, username, firstName, lastName, managerId, status FROM telegram_accounts",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT id, username, firstName, lastName, managerId, status FROM telegram_accounts",
+  "rows": [
+    {
+      "id": "180015",
+      "username": "affiliate_LeadCash",
+      "firstName": "Менеджер LeadCash",
+      "lastName": "NULL",
+      "managerId": "NULL",
+      "status": "active"
+    },
+    {
+      "id": "210001",
+      "username": "LeadCash_Affiliate",
+      "firstName": "Ulyana",
+      "lastName": "LeadCash",
+      "managerId": "NULL",
+      "status": "active"
+    },
+    {
+      "id": "210002",
+      "username": "LeadCash_manager",
+      "firstName": "Irina",
+      "lastName": "Koripenko",
+      "managerId": "NULL",
+      "status": "active"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tfirstName\tlastName\tmanagerId\tstatus\n180015\taffiliate_LeadCash\tМенеджер LeadCash\tNULL\tNULL\tactive\n210001\tLeadCash_Affiliate\tUlyana\tLeadCash\tNULL\tactive\n210002\tLeadCash_manager\tIrina\tKoripenko\tNULL\tactive\n",
+  "stderr": "",
+  "execution_time_ms": 57
+}
