@@ -8,6 +8,30 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { sseHandler } from "../sse";
+import { disconnectAll } from "../telegram";
+
+// ─── Graceful shutdown: disconnect all Telegram MTProto clients on SIGTERM ───
+// Render sends SIGTERM before killing old instance during zero-downtime deploy.
+// We MUST disconnect all MTProto clients so Telegram releases the auth_key,
+// otherwise the new instance gets AUTH_KEY_DUPLICATED (406) and the session dies.
+let isShuttingDown = false;
+async function gracefulShutdown(signal: string) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`[Server] ${signal} received — disconnecting all Telegram clients...`);
+  try {
+    await Promise.race([
+      disconnectAll(),
+      new Promise(r => setTimeout(r, 10_000)), // max 10s for disconnect
+    ]);
+    console.log(`[Server] Telegram clients disconnected. Exiting.`);
+  } catch (err) {
+    console.error(`[Server] Error during graceful shutdown:`, err);
+  }
+  process.exit(0);
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {

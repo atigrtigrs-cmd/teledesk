@@ -396,3 +396,16 @@
 - [x] AvatarWithFallback component already handles display correctly
 - [x] Deployed to Render (Bot API fallback active, MTProto pending AUTH_KEY fix)
 - [x] Prepared comprehensive audit document (AUDIT.md) with 12 prioritized issues
+
+## DEFINITIVE FIX: AUTH_KEY_DUPLICATED (Mar 15, 2026)
+- [ ] Deep diagnosis: understand exact failure sequence on Render deploys
+- [ ] Implement a solution that guarantees single MTProto connection per session
+- [ ] Verify real-time messaging works after deploy
+- [ ] Confirm: incoming messages arrive, outgoing messages send, sync works
+
+## DEFINITIVE FIX: Graceful Shutdown + Real Status (Mar 15, 2026)
+- [ ] Add SIGTERM handler: disconnect all MTProto clients before process exits (prevents AUTH_KEY_DUPLICATED on Render redeploy)
+- [ ] Fix account status display: show real connection state, not just DB field
+- [ ] Handle AUTH_KEY_DUPLICATED in connectAccount: mark session as dead, require re-login
+- [ ] Clean up deleted accounts from DB
+- [ ] Test and deploy

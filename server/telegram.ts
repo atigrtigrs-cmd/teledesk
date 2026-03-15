@@ -234,8 +234,17 @@ export async function restoreAllSessions(): Promise<void> {
       } catch (err: any) {
         const errMsg = String(err?.message ?? err ?? "");
         if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
-          // connectAccount already retried with backoff — if we're here, all retries failed
-          console.warn(`[Telegram] Account #${acc.id} AUTH_KEY_DUPLICATED after all retries — session in use by another process`);
+          // Session is permanently dead per Telegram docs. Clear it and require re-login.
+          console.error(`[Telegram] Account #${acc.id} AUTH_KEY_DUPLICATED — session DEAD. Clearing session, user must re-login via QR.`);
+          await db
+            .update(telegramAccounts)
+            .set({
+              status: "disconnected",
+              sessionString: null,
+              lastError: "AUTH_KEY_DUPLICATED: сессия аннулирована Telegram. Необходимо заново подключить аккаунт через QR-код.",
+            })
+            .where(eq(telegramAccounts.id, acc.id))
+            .catch(() => {});
         } else if (errMsg.includes("FLOOD_WAIT")) {
           console.warn(`[Telegram] Account #${acc.id} FLOOD_WAIT — rate limited, will retry later`);
         } else {
@@ -290,7 +299,16 @@ export async function connectAccount(accountId: number, sessionString: string): 
   } catch (err: any) {
     const msg = String(err?.message ?? err ?? "");
     if (msg.includes("AUTH_KEY_DUPLICATED")) {
-      console.error(`[Telegram] Account #${accountId} AUTH_KEY_DUPLICATED — process lock may not be working on this platform`);
+      console.error(`[Telegram] Account #${accountId} AUTH_KEY_DUPLICATED — session DEAD. Clearing session.`);
+      const db2 = await getDb();
+      await db2?.update(telegramAccounts)
+        .set({
+          status: "disconnected",
+          sessionString: null,
+          lastError: "AUTH_KEY_DUPLICATED: сессия аннулирована Telegram. Необходимо заново подключить аккаунт через QR-код.",
+        })
+        .where(eq(telegramAccounts.id, accountId))
+        .catch(() => {});
     }
     throw err;
   } finally {

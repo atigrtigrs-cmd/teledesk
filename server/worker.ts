@@ -217,12 +217,21 @@ async function connectAccount(
         .where(eq(telegramAccounts.id, accountId));
     }
 
-    // FIX #1 (AUTH_KEY_DUPLICATED): old server instance still running.
-    // Set cooldown — pollForNewAccounts will retry after cooldown expires.
-    // No setTimeout retry — avoids cascading retry loops.
+    // AUTH_KEY_DUPLICATED means Telegram has PERMANENTLY invalidated this session.
+    // Per official docs: "the session was already invalidated by the server
+    // and the user must generate a new auth key and login again."
+    // We must clear the session string and mark as disconnected — no retry will help.
     if (msg.includes("AUTH_KEY_DUPLICATED")) {
-      setCooldown(accountId, 120 * 1000);
-      console.log(`[Worker] AUTH_KEY_DUPLICATED for account #${accountId} — cooldown set for 120s. pollForNewAccounts will retry after.`);
+      console.error(`[Worker] AUTH_KEY_DUPLICATED for account #${accountId} — session is DEAD. Clearing session, user must re-login.`);
+      await db
+        .update(telegramAccounts)
+        .set({
+          status: "disconnected",
+          sessionString: null,
+          lastError: "AUTH_KEY_DUPLICATED: сессия аннулирована Telegram. Необходимо заново подключить аккаунт через QR-код.",
+        })
+        .where(eq(telegramAccounts.id, accountId))
+        .catch(() => {});
     }
 
     // Disconnect the gramjs client to stop its internal reconnect loop

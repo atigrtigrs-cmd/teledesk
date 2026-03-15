@@ -546,6 +546,26 @@ export default function Accounts() {
                     <Settings2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   </button>
 
+                  {/* Last Error - show if disconnected with error */}
+                  {acc.status === "disconnected" && (acc as any).lastError && (
+                    <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg text-xs bg-red-500/10 border border-red-500/20 text-red-400">
+                      <WifiOff className="h-3 w-3 shrink-0" />
+                      <span className="flex-1">{(acc as any).lastError}</span>
+                      {String((acc as any).lastError).includes("AUTH_KEY_DUPLICATED") && (
+                        <button
+                          onClick={() => {
+                            setPendingAccountId(acc.id);
+                            setLoginMode("choose");
+                            setShowDialog(true);
+                          }}
+                          className="ml-auto text-[10px] font-semibold underline underline-offset-2 opacity-80 hover:opacity-100 text-primary shrink-0"
+                        >
+                          Переподключить
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {/* Sync Status */}
                   {acc.status === "active" && (
                     <div className={`flex items-center gap-2 mb-3 px-3 py-2 rounded-lg text-xs ${
