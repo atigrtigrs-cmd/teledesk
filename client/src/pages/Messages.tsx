@@ -5,6 +5,7 @@ import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Select,
   SelectContent,
@@ -57,13 +58,13 @@ const statusConfig: Record<string, { label: string; color: string; dot: string }
   waiting: { label: "Ожидает", color: "bg-orange-500/10 text-orange-400 border-orange-500/20", dot: "bg-orange-400" },
   resolved: { label: "Решён", color: "bg-green-500/10 text-green-400 border-green-500/20", dot: "bg-green-400" },
   closed: { label: "Закрыт", color: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground" },
-  needs_reply: { label: "Ответить", color: "bg-red-500/10 text-red-400 border-red-500/20", dot: "bg-red-400" },
+  needs_reply: { label: "Follow-up", color: "bg-red-500/10 text-red-400 border-red-500/20", dot: "bg-red-400" },
   archived: { label: "Архив", color: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20", dot: "bg-zinc-500" },
 };
 
 const statusFilters: { label: string; value: StatusFilter }[] = [
   { label: "Все", value: "all" },
-  { label: "Ответить", value: "needs_reply" },
+  { label: "Follow-up", value: "needs_reply" },
   { label: "Открытые", value: "open" },
   { label: "В работе", value: "in_progress" },
   { label: "Ожидают", value: "waiting" },
@@ -312,29 +313,57 @@ export default function Messages() {
       </div>
 
       {/* ── Column 2: Chat View ── */}
-      {selectedDialogId ? (
-        <ChatView
-          dialogId={selectedDialogId}
-          connectionState={connectionState}
-          onToggleContact={() => setShowContactPanel(v => !v)}
-          showContactPanel={showContactPanel}
-        />
-      ) : (
-        <div className="flex-1 flex items-center justify-center bg-background">
-          <div className="text-center">
-            <MessageSquare className="h-12 w-12 text-muted-foreground/20 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">Выберите диалог</p>
-          </div>
-        </div>
-      )}
+      <AnimatePresence mode="wait" initial={false}>
+        {selectedDialogId ? (
+          <motion.div
+            key={`chat-${selectedDialogId}`}
+            className="flex-1 min-w-0"
+            initial={{ opacity: 0, x: 14 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -10 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+          >
+            <ChatView
+              dialogId={selectedDialogId}
+              connectionState={connectionState}
+              onToggleContact={() => setShowContactPanel(v => !v)}
+              showContactPanel={showContactPanel}
+            />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="chat-empty"
+            className="flex-1 flex items-center justify-center bg-background"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+          >
+            <div className="text-center">
+              <MessageSquare className="h-12 w-12 text-muted-foreground/20 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">Выберите диалог</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Column 3: Contact Info Panel ── */}
-      {selectedDialogId && showContactPanel && (
-        <ContactPanel
-          dialogId={selectedDialogId}
-          onClose={() => setShowContactPanel(false)}
-        />
-      )}
+      <AnimatePresence initial={false}>
+        {selectedDialogId && showContactPanel && (
+          <motion.div
+            key={`contact-${selectedDialogId}`}
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 24 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+          >
+            <ContactPanel
+              dialogId={selectedDialogId}
+              onClose={() => setShowContactPanel(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -634,9 +663,9 @@ function DialogList({
               <button
                 key={dialog.id}
                 onClick={() => onSelect(dialog.id)}
-                className={`w-full px-3 py-2.5 flex items-start gap-2.5 text-left transition-colors ${
+                className={`w-full px-3 py-2.5 flex items-start gap-2.5 text-left transition-all duration-200 ${
                   isSelected
-                    ? "bg-primary/10 border-l-2 border-primary"
+                    ? "bg-primary/10 border-l-2 border-primary shadow-[inset_0_0_0_1px_rgba(251,146,60,0.08)]"
                     : "hover:bg-muted/20 border-l-2 border-transparent"
                 }`}
               >
