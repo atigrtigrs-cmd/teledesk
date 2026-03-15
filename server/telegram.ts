@@ -479,6 +479,16 @@ async function saveSessionAndListen(
   const db = await getDb();
   if (!db) return;
 
+  await db
+    .update(telegramAccounts)
+    .set({
+      sessionString,
+      status: "active",
+      lastError: null,
+    })
+    .where(eq(telegramAccounts.id, accountId))
+    .catch(() => {});
+
   // Get account info from Telegram
   let myTelegramId: string | null = null;
   try {
@@ -490,6 +500,7 @@ async function saveSessionAndListen(
       .set({
         sessionString,
         status: "active",
+        lastError: null,
         telegramId: myTelegramId,
         username: meUser.username ?? null,
         firstName: meUser.firstName ?? null,
