@@ -32,6 +32,13 @@ function extractAiField(aiSummary: string | null | undefined, label: string): st
   return match?.[1]?.trim() ?? "";
 }
 
+function compactAiText(value: string | null | undefined, maxLength: number) {
+  if (!value) return "";
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -569,18 +576,18 @@ export const appRouter = router({
           messages: [
             {
               role: "system",
-              content: `Ты — AI-аналитик CRM для Telegram-диалогов. Отвечай только на русском. Не пересказывай весь чат подряд. Делай короткое рабочее резюме для менеджера: что клиент хочет, на какой стадии диалог, что уже сделали, что остается следующим шагом. Если диалог длинный, приоритет у последних сообщений, но учитывай начало как контекст. Не выдумывай факты.`
+              content: `Ты — AI-аналитик CRM для Telegram-диалогов. Отвечай только на русском. Не пересказывай чат подряд и не пиши длинные абзацы. Дай сверхкороткое рабочее резюме для менеджера: чего хочет клиент, на какой стадии диалог и что делать дальше. Приоритет у последних сообщений, начало используй только как контекст. Не выдумывай факты.`
             },
             {
               role: "user",
               content: `Проанализируй диалог и верни JSON.
 
 Требования к полям:
-- summary: 3-4 коротких предложения по сути. Не общий пересказ, а текущее состояние диалога.
+- summary: 1-2 коротких предложения, максимум 220 символов. Не общий пересказ, а текущее состояние диалога.
 - sentiment: настроение клиента (positive/neutral/negative).
-- tags: 1-4 коротких бизнес-тега на русском.
-- keyTopics: перечисли через запятую конкретные темы диалога.
-- recommendation: одно четкое следующее действие менеджера.
+- tags: 1-3 коротких бизнес-тега на русском.
+- keyTopics: перечисли через запятую до 3 конкретных тем диалога, максимум 90 символов.
+- recommendation: одно четкое следующее действие менеджера, максимум 120 символов.
 
 Служебная сводка:
 ${conversationBrief}
@@ -621,9 +628,9 @@ ${recentWindow || "—"}`
 
         // Build a rich note combining all AI insights
         const aiNote = [
-          result.summary ? `Резюме: ${result.summary}` : "",
-          result.keyTopics ? `Темы: ${result.keyTopics}` : "",
-          result.recommendation ? `Следующий шаг: ${result.recommendation}` : "",
+          result.summary ? `Резюме: ${compactAiText(result.summary, 220)}` : "",
+          result.keyTopics ? `Темы: ${compactAiText(result.keyTopics, 90)}` : "",
+          result.recommendation ? `Следующий шаг: ${compactAiText(result.recommendation, 120)}` : "",
         ].filter(Boolean).join("\n");
 
         await db.update(dialogs).set({
