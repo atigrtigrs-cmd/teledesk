@@ -82,6 +82,35 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        const matchClauses = [
+          input.telegramId ? eq(telegramAccounts.telegramId, input.telegramId) : null,
+          input.phone ? eq(telegramAccounts.phone, input.phone) : null,
+          input.username ? eq(telegramAccounts.username, input.username) : null,
+        ].filter(Boolean) as any[];
+
+        if (matchClauses.length > 0) {
+          const [existing] = await db.select()
+            .from(telegramAccounts)
+            .where(sql.join(matchClauses, sql` OR `))
+            .limit(1);
+
+          if (existing) {
+            await db.update(telegramAccounts).set({
+              phone: input.phone ?? existing.phone,
+              username: input.username ?? existing.username,
+              firstName: input.firstName ?? existing.firstName,
+              lastName: input.lastName ?? existing.lastName,
+              telegramId: input.telegramId ?? existing.telegramId,
+              status: input.status,
+              lastError: null,
+            }).where(eq(telegramAccounts.id, existing.id));
+
+            const [reused] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, existing.id)).limit(1);
+            return reused;
+          }
+        }
+
         await db.insert(telegramAccounts).values({ ...input, ownerId: ctx.user.id });
         const [acc] = await db.select().from(telegramAccounts).orderBy(desc(telegramAccounts.id)).limit(1);
         return acc;
