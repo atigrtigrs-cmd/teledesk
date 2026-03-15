@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { motion } from "framer-motion";
 import {
   Select,
   SelectContent,
@@ -38,6 +39,19 @@ const statusLabels: Record<string, { label: string; color: string }> = {
   resolved: { label: "Решён", color: "#22c55e" },
   closed: { label: "Закрыт", color: "#6b7280" },
   archived: { label: "Архив", color: "#71717a" },
+};
+
+const analyticsSectionVariants = {
+  hidden: { opacity: 0, y: 18 },
+  visible: (index: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.28,
+      delay: index * 0.07,
+      ease: "easeOut",
+    },
+  }),
 };
 
 export default function AnalyticsPage() {
@@ -79,11 +93,43 @@ export default function AnalyticsPage() {
     return hourlyActivity.reduce((max, h) => h.count > max.count ? h : max, hourlyActivity[0]);
   }, [hourlyActivity]);
 
+  const insightHighlights = useMemo(() => {
+    const highlights: string[] = [];
+
+    if ((summary?.totalDialogs ?? 0) > 0) {
+      highlights.push(`За период в работе ${summary?.totalDialogs ?? 0} диалогов и ${summary?.totalMessages ?? 0} сообщений.`);
+    }
+
+    if (totalNeedsReply > 0) {
+      highlights.push(`${totalNeedsReply} диалогов требуют follow-up, их стоит вынести в приоритет.`);
+    }
+
+    if (peakHour) {
+      highlights.push(`Пиковая нагрузка приходится на ${peakHour.hour}:00, в этот слот лучше держать максимальную доступность команды.`);
+    }
+
+    if ((aiInsights?.negativeDialogs?.length ?? 0) > 0) {
+      highlights.push(`${aiInsights?.negativeDialogs?.length ?? 0} диалогов отмечены как негативные и требуют ручного внимания.`);
+    }
+
+    if ((summary?.activeAccounts ?? 0) > 0) {
+      highlights.push(`Сейчас активно ${summary?.activeAccounts ?? 0} Telegram-аккаунта, realtime-синхронизация распределена между ними.`);
+    }
+
+    return highlights;
+  }, [aiInsights?.negativeDialogs?.length, peakHour, summary?.activeAccounts, summary?.totalDialogs, summary?.totalMessages, totalNeedsReply]);
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-7xl mx-auto py-6 px-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <motion.div
+          className="flex items-center justify-between"
+          variants={analyticsSectionVariants}
+          initial="hidden"
+          animate="visible"
+          custom={0}
+        >
           <div>
             <h2 className="text-lg font-bold">Аналитика</h2>
             <p className="text-sm text-muted-foreground mt-0.5">Обзор активности и эффективности</p>
@@ -132,7 +178,7 @@ export default function AnalyticsPage() {
               </div>
             )}
           </div>
-        </div>
+        </motion.div>
 
         {/* KPI Cards - 2 rows */}
         {summaryLoading ? (
@@ -141,13 +187,25 @@ export default function AnalyticsPage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <motion.div
+              className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+              variants={analyticsSectionVariants}
+              initial="hidden"
+              animate="visible"
+              custom={1}
+            >
               <KpiCard title="Диалоги" value={summary?.totalDialogs ?? 0} icon={MessageSquare} color="text-blue-400" bgColor="bg-blue-500/10" />
               <KpiCard title="Сообщения" value={summary?.totalMessages ?? 0} icon={Zap} color="text-primary" bgColor="bg-primary/10" />
               <KpiCard title="Отправлено" value={totalSent} icon={ArrowUpRight} color="text-green-400" bgColor="bg-green-500/10" />
               <KpiCard title="Получено" value={totalReceived} icon={ArrowDownLeft} color="text-cyan-400" bgColor="bg-cyan-500/10" />
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            </motion.div>
+            <motion.div
+              className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+              variants={analyticsSectionVariants}
+              initial="hidden"
+              animate="visible"
+              custom={2}
+            >
               <KpiCard title="Сделки" value={summary?.totalDeals ?? 0} icon={TrendingUp} color="text-emerald-400" bgColor="bg-emerald-500/10" />
               <KpiCard title="Аккаунты" value={summary?.activeAccounts ?? 0} icon={Users} color="text-violet-400" bgColor="bg-violet-500/10" />
               <KpiCard title="Нужен ответ" value={totalNeedsReply} icon={MessageSquare} color="text-red-400" bgColor="bg-red-500/10" />
@@ -159,12 +217,18 @@ export default function AnalyticsPage() {
                 color="text-amber-400"
                 bgColor="bg-amber-500/10"
               />
-            </div>
+            </motion.div>
           </>
         )}
 
         {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <motion.div
+          className="grid grid-cols-1 lg:grid-cols-3 gap-4"
+          variants={analyticsSectionVariants}
+          initial="hidden"
+          animate="visible"
+          custom={3}
+        >
           {/* Messages by Day Bar Chart */}
           <Card className="bg-card border-border lg:col-span-2">
             <CardHeader className="pb-2">
@@ -202,10 +266,16 @@ export default function AnalyticsPage() {
               )}
             </CardContent>
           </Card>
-        </div>
+        </motion.div>
 
         {/* Second Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <motion.div
+          className="grid grid-cols-1 lg:grid-cols-2 gap-4"
+          variants={analyticsSectionVariants}
+          initial="hidden"
+          animate="visible"
+          custom={4}
+        >
           {/* Hourly Activity */}
           <Card className="bg-card border-border">
             <CardHeader className="pb-2">
@@ -246,103 +316,115 @@ export default function AnalyticsPage() {
               )}
             </CardContent>
           </Card>
-        </div>
+        </motion.div>
 
         {/* Менеджеры (ТГ аккаунты) — единая таблица */}
         {accountStats?.stats && accountStats.stats.length > 0 && (
-          <Card className="bg-card border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">Менеджеры</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-muted-foreground text-xs">
-                      <th className="text-left py-2 pr-4 font-medium">Менеджер</th>
-                      <th className="text-right py-2 pr-4 font-medium">Диалоги</th>
-                      <th className="text-right py-2 pr-4 font-medium">Отправлено</th>
-                      <th className="text-right py-2 pr-4 font-medium">Получено</th>
-                      <th className="text-right py-2 pr-4 font-medium">Нужен ответ</th>
-                      <th className="text-right py-2 pr-4 font-medium">Ср. ответ</th>
-                      <th className="text-right py-2 font-medium">Нагрузка</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {accountStats.stats.map((acc) => {
-                      const total = acc.sent + acc.received;
-                      const maxTotal = Math.max(...accountStats.stats.map(a => a.sent + a.received), 1);
-                      const loadPct = Math.round((total / maxTotal) * 100);
-                      const managerLabel = [acc.firstName, acc.lastName].filter(Boolean).join(" ") || acc.managerName;
-                      return (
-                        <tr key={acc.accountId} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                          <td className="py-2.5 pr-4">
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-2">
-                                <div className={`h-2 w-2 rounded-full ${acc.status === "active" ? "bg-green-400" : "bg-muted-foreground"}`} />
-                                <span className="font-medium">{managerLabel || "—"}</span>
+          <motion.div
+            variants={analyticsSectionVariants}
+            initial="hidden"
+            animate="visible"
+            custom={5}
+          >
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">Менеджеры</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground text-xs">
+                        <th className="text-left py-2 pr-4 font-medium">Менеджер</th>
+                        <th className="text-right py-2 pr-4 font-medium">Диалоги</th>
+                        <th className="text-right py-2 pr-4 font-medium">Отправлено</th>
+                        <th className="text-right py-2 pr-4 font-medium">Получено</th>
+                        <th className="text-right py-2 pr-4 font-medium">Нужен ответ</th>
+                        <th className="text-right py-2 pr-4 font-medium">Ср. ответ</th>
+                        <th className="text-right py-2 font-medium">Нагрузка</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {accountStats.stats.map((acc) => {
+                        const total = acc.sent + acc.received;
+                        const maxTotal = Math.max(...accountStats.stats.map(a => a.sent + a.received), 1);
+                        const loadPct = Math.round((total / maxTotal) * 100);
+                        const managerLabel = [acc.firstName, acc.lastName].filter(Boolean).join(" ") || acc.managerName;
+                        return (
+                          <tr key={acc.accountId} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                            <td className="py-2.5 pr-4">
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-2">
+                                  <div className={`h-2 w-2 rounded-full ${acc.status === "active" ? "bg-green-400" : "bg-muted-foreground"}`} />
+                                  <span className="font-medium">{managerLabel || "—"}</span>
+                                </div>
+                                <span className="text-xs text-muted-foreground ml-4">
+                                  {acc.username ? `@${acc.username}` : `#${acc.accountId}`}
+                                </span>
                               </div>
-                              <span className="text-xs text-muted-foreground ml-4">
-                                {acc.username ? `@${acc.username}` : `#${acc.accountId}`}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-2.5 pr-4 text-right tabular-nums">{acc.newDialogs}</td>
-                          <td className="py-2.5 pr-4 text-right tabular-nums text-green-400">{acc.sent}</td>
-                          <td className="py-2.5 pr-4 text-right tabular-nums text-blue-400">{acc.received}</td>
-                          <td className="py-2.5 pr-4 text-right">
-                            {acc.needsReply > 0 ? (
-                              <span className="text-red-400 font-semibold">{acc.needsReply}</span>
-                            ) : (
-                              <span className="text-muted-foreground">0</span>
-                            )}
-                          </td>
-                          <td className="py-2.5 pr-4 text-right tabular-nums text-muted-foreground">
-                            {acc.avgResponseMs > 0 ? `${Math.round(acc.avgResponseMs / 60000)} мин` : "—"}
-                          </td>
-                          <td className="py-2.5 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full ${loadPct >= 50 ? "bg-primary" : "bg-primary/60"}`}
-                                  style={{ width: `${loadPct}%` }}
-                                />
+                            </td>
+                            <td className="py-2.5 pr-4 text-right tabular-nums">{acc.newDialogs}</td>
+                            <td className="py-2.5 pr-4 text-right tabular-nums text-green-400">{acc.sent}</td>
+                            <td className="py-2.5 pr-4 text-right tabular-nums text-blue-400">{acc.received}</td>
+                            <td className="py-2.5 pr-4 text-right">
+                              {acc.needsReply > 0 ? (
+                                <span className="text-red-400 font-semibold">{acc.needsReply}</span>
+                              ) : (
+                                <span className="text-muted-foreground">0</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 pr-4 text-right tabular-nums text-muted-foreground">
+                              {acc.avgResponseMs > 0 ? `${Math.round(acc.avgResponseMs / 60000)} мин` : "—"}
+                            </td>
+                            <td className="py-2.5 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${loadPct >= 50 ? "bg-primary" : "bg-primary/60"}`}
+                                    style={{ width: `${loadPct}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs tabular-nums w-8 text-right text-muted-foreground">{loadPct}%</span>
                               </div>
-                              <span className="text-xs tabular-nums w-8 text-right text-muted-foreground">{loadPct}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {/* Totals row */}
-                    <tr className="border-t-2 border-border font-semibold">
-                      <td className="py-2.5 pr-4">Итого</td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums">
-                        {accountStats.stats.reduce((s, a) => s + a.newDialogs, 0)}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-green-400">
-                        {totalSent}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-blue-400">
-                        {totalReceived}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-red-400">
-                        {totalNeedsReply}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-muted-foreground">
-                        {avgResponse ? `${avgResponse} мин` : "—"}
-                      </td>
-                      <td className="py-2.5 text-right" />
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      <tr className="border-t-2 border-border font-semibold">
+                        <td className="py-2.5 pr-4">Итого</td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums">
+                          {accountStats.stats.reduce((s, a) => s + a.newDialogs, 0)}
+                        </td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums text-green-400">
+                          {totalSent}
+                        </td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums text-blue-400">
+                          {totalReceived}
+                        </td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums text-red-400">
+                          {totalNeedsReply}
+                        </td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums text-muted-foreground">
+                          {avgResponse ? `${avgResponse} мин` : "—"}
+                        </td>
+                        <td className="py-2.5 text-right" />
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
         )}
 
         {/* AI Insights */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <motion.div
+          className="grid grid-cols-1 xl:grid-cols-3 gap-4"
+          variants={analyticsSectionVariants}
+          initial="hidden"
+          animate="visible"
+          custom={6}
+        >
           <Card className="bg-card border-border">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
@@ -407,7 +489,36 @@ export default function AnalyticsPage() {
               )}
             </CardContent>
           </Card>
-        </div>
+        </motion.div>
+
+        <motion.div
+          variants={analyticsSectionVariants}
+          initial="hidden"
+          animate="visible"
+          custom={7}
+        >
+          <Card className="border-border bg-gradient-to-br from-primary/10 via-background to-amber-500/5">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <CardTitle className="text-sm font-semibold">Ключевые выводы</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {insightHighlights.length ? (
+                insightHighlights.map((highlight) => (
+                  <div key={highlight} className="rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-foreground/90">
+                    {highlight}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed border-border bg-background/60 px-4 py-6 text-sm text-muted-foreground">
+                  Недостаточно данных для выводов за выбранный период.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     </div>
   );

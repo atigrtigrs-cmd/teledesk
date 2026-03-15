@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, Redirect } from "wouter";
+import { AnimatePresence, motion } from "framer-motion";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import AppLayout from "./components/AppLayout";
@@ -16,27 +17,41 @@ import TagsPage from "./pages/TagsPage";
 import LeadCashBot from "./pages/LeadCashBot";
 import Accounts from "./pages/Accounts";
 import SettingsPage from "./pages/SettingsPage";
+import { useLocation } from "wouter";
 
 function AppRoutes() {
+  const [location] = useLocation();
+
   return (
     <AppLayout>
-      <Switch>
-        <Route path="/messages" component={Messages} />
-        <Route path="/contacts" component={ContactsPage} />
-        <Route path="/funnels" component={FunnelsPage} />
-        <Route path="/analytics" component={AnalyticsPage} />
-        <Route path="/tags" component={TagsPage} />
-        <Route path="/bot" component={LeadCashBot} />
-        <Route path="/accounts" component={Accounts} />
-        <Route path="/settings" component={SettingsPage} />
-        {/* Legacy redirects */}
-        <Route path="/inbox"><Redirect to="/messages" /></Route>
-        <Route path="/dashboard"><Redirect to="/messages" /></Route>
-        <Route path="/">
-          <Redirect to="/messages" />
-        </Route>
-        <Route component={NotFound} />
-      </Switch>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={location}
+          className="h-full"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
+        >
+          <Switch>
+            <Route path="/messages" component={Messages} />
+            <Route path="/contacts" component={ContactsPage} />
+            <Route path="/funnels" component={FunnelsPage} />
+            <Route path="/analytics" component={AnalyticsPage} />
+            <Route path="/tags" component={TagsPage} />
+            <Route path="/bot" component={LeadCashBot} />
+            <Route path="/accounts" component={Accounts} />
+            <Route path="/settings" component={SettingsPage} />
+            {/* Legacy redirects */}
+            <Route path="/inbox"><Redirect to="/messages" /></Route>
+            <Route path="/dashboard"><Redirect to="/messages" /></Route>
+            <Route path="/">
+              <Redirect to="/messages" />
+            </Route>
+            <Route component={NotFound} />
+          </Switch>
+        </motion.div>
+      </AnimatePresence>
     </AppLayout>
   );
 }
