@@ -431,8 +431,11 @@ export default function AnalyticsPage() {
                 <Sparkles className="h-4 w-4 text-primary" />
                 <CardTitle className="text-sm font-semibold">Топ тем</CardTitle>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Основано на {aiInsights?.analyzedDialogs ?? 0} диалогах с готовым ИИ-анализом за выбранный период.
+              </p>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-4">
               {aiInsights?.topTopics?.length ? aiInsights.topTopics.map((item) => (
                 <div key={item.topic} className="flex items-center justify-between gap-3 rounded-lg bg-muted/20 px-3 py-2">
                   <span className="text-sm">{item.topic}</span>
@@ -440,6 +443,41 @@ export default function AnalyticsPage() {
                 </div>
               )) : (
                 <div className="text-sm text-muted-foreground">Нет AI-анализа за выбранный период</div>
+              )}
+
+              {!!aiInsights?.accountTopicBreakdown?.length && (
+                <div className="space-y-2 border-t border-border/60 pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    По аккаунтам
+                  </p>
+                  <div className="space-y-2">
+                    {aiInsights.accountTopicBreakdown.map((account) => (
+                      <div key={account.accountUsername} className="rounded-lg border border-border/60 bg-background/50 px-3 py-2">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium">{account.accountUsername}</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {account.analyzedDialogs} диалогов
+                          </span>
+                        </div>
+                        {account.topics.length ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {account.topics.map((topic) => (
+                              <span
+                                key={`${account.accountUsername}-${topic.topic}`}
+                                className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-[11px] text-foreground/85"
+                              >
+                                <span className="max-w-[180px] truncate">{topic.topic}</span>
+                                <span className="text-muted-foreground">{topic.count}</span>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">Для этого аккаунта тем пока мало.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>

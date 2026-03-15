@@ -39,6 +39,17 @@ function compactAiText(value: string | null | undefined, maxLength: number) {
   return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
 }
 
+function normalizeTopicToken(value: string | null | undefined) {
+  if (!value) return "";
+  return value
+    .replace(/^темы:\s*/i, "")
+    .replace(/^следующий шаг:\s*/i, "")
+    .replace(/^рекомендация:\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.;:]+$/g, "");
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -1297,7 +1308,7 @@ ${recentWindow || "—"}`
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) {
-          return { topTopics: [], negativeDialogs: [], followUpDialogs: [] };
+          return { topTopics: [], negativeDialogs: [], followUpDialogs: [], analyzedDialogs: 0, accountTopicBreakdown: [] };
         }
 
         let since: Date | null = null;
@@ -1337,6 +1348,7 @@ ${recentWindow || "—"}`
           .limit(1000);
 
         const topicCounts = new Map<string, number>();
+        const accountTopicCounts = new Map<string, Map<string, number>>();
         const normalizedRows = rows.map((row) => {
           const contactName =
             `${row.contactFirstName ?? ""} ${row.contactLastName ?? ""}`.trim() ||
@@ -1345,13 +1357,20 @@ ${recentWindow || "—"}`
           const topicsText = extractAiField(row.aiSummary, "Темы");
           const nextStep = extractAiField(row.aiSummary, "Следующий шаг");
           const topics = topicsText
-            .split(",")
-            .map((topic) => topic.trim())
+            .split(/[,\n|]/)
+            .map((topic) => normalizeTopicToken(topic))
             .filter(Boolean)
             .slice(0, 6);
 
+          const accountLabel = row.accountUsername ? `@${row.accountUsername}` : "Без аккаунта";
+          if (!accountTopicCounts.has(accountLabel)) {
+            accountTopicCounts.set(accountLabel, new Map<string, number>());
+          }
+          const perAccountCounts = accountTopicCounts.get(accountLabel)!;
+
           for (const topic of topics) {
             topicCounts.set(topic, (topicCounts.get(topic) ?? 0) + 1);
+            perAccountCounts.set(topic, (perAccountCounts.get(topic) ?? 0) + 1);
           }
 
           return {
@@ -1359,7 +1378,7 @@ ${recentWindow || "—"}`
             status: row.status,
             sentiment: row.sentiment,
             contactName,
-            accountUsername: row.accountUsername ? `@${row.accountUsername}` : "—",
+            accountUsername: accountLabel,
             lastMessageAt: row.lastMessageAt,
             lastMessageText: row.lastMessageText,
             summary: extractAiField(row.aiSummary, "Резюме") || row.aiSummary || "",
@@ -1384,10 +1403,23 @@ ${recentWindow || "—"}`
           )
           .slice(0, 8);
 
+        const accountTopicBreakdown = Array.from(accountTopicCounts.entries())
+          .map(([accountUsername, counts]) => ({
+            accountUsername,
+            analyzedDialogs: normalizedRows.filter((row) => row.accountUsername === accountUsername).length,
+            topics: Array.from(counts.entries())
+              .map(([topic, count]) => ({ topic, count }))
+              .sort((a, b) => b.count - a.count)
+              .slice(0, 5),
+          }))
+          .sort((a, b) => b.analyzedDialogs - a.analyzedDialogs);
+
         return {
           topTopics,
           negativeDialogs,
           followUpDialogs,
+          analyzedDialogs: normalizedRows.length,
+          accountTopicBreakdown,
         };
       }),
 
