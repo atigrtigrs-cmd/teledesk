@@ -409,3 +409,13 @@
 - [x] "Переподключить" button opens QR login for accounts with AUTH_KEY_DUPLICATED error
 - [x] Accounts already deleted by user
 - [x] All 27 tests passing, TypeScript 0 errors
+
+## Performance: Remove Startup Delay + Add DB Indexes (Mar 15, 2026)
+- [x] Reduced startup delay from 120s to 15s (SIGTERM handler ensures old instance disconnects within 10s)
+- [x] Added DB index on contacts.telegramId
+- [x] Added DB index on messages(dialogId, createdAt) — composite index for fast message loading
+- [x] Added DB index on messages.telegramMessageId — for deduplication lookups
+- [x] Added DB indexes on dialogs: telegramAccountId, contactId, status, lastMessageAt
+- [x] All 7 indexes created via SQL (6.4s for 337K+ rows), verified
+- [x] Schema updated in drizzle/schema.ts with index definitions
+- [x] All 27 tests passing, 0 TS errors

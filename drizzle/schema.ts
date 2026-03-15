@@ -7,6 +7,8 @@ import {
   varchar,
   boolean,
   json,
+  index,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users (managers/admins) ──────────────────────────────────────────────────
@@ -70,7 +72,9 @@ export const contacts = mysqlTable("contacts", {
   bitrixContactId: varchar("bitrixContactId", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ([
+  index("idx_contacts_telegramId").on(table.telegramId),
+]));
 
 export type Contact = typeof contacts.$inferSelect;
 export type InsertContact = typeof contacts.$inferInsert;
@@ -104,7 +108,12 @@ export const dialogs = mysqlTable("dialogs", {
   closedAt: timestamp("closedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ([
+  index("idx_dialogs_telegramAccountId").on(table.telegramAccountId),
+  index("idx_dialogs_contactId").on(table.contactId),
+  index("idx_dialogs_status").on(table.status),
+  index("idx_dialogs_lastMessageAt").on(table.lastMessageAt),
+]));
 
 export type Dialog = typeof dialogs.$inferSelect;
 export type InsertDialog = typeof dialogs.$inferInsert;
@@ -122,7 +131,10 @@ export const messages = mysqlTable("messages", {
   senderName: varchar("senderName", { length: 255 }),
   isRead: boolean("isRead").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ([
+  index("idx_messages_dialogId_createdAt").on(table.dialogId, table.createdAt),
+  index("idx_messages_telegramMessageId").on(table.telegramMessageId),
+]));
 
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = typeof messages.$inferInsert;

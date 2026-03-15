@@ -1143,11 +1143,11 @@ async function main(): Promise<void> {
   console.log(`[Worker] PID: ${process.pid}`);
   console.log(`[Worker] NODE_ENV: ${process.env.NODE_ENV}`);
 
-  // Simple startup delay: wait 60s for old Render instance to fully die.
-  // Distributed lock approach caused deadlocks because Render kills the new instance
-  // if it doesn't respond to health checks while waiting for the lock.
-   const STARTUP_DELAY_MS = 120 * 1000;
-  console.log(`[Worker] Waiting ${STARTUP_DELAY_MS / 1000}s for old instance to die before connecting to Telegram...`);
+  // Short startup delay: give the old instance 15s to finish graceful SIGTERM shutdown.
+  // The SIGTERM handler in index.ts disconnects all MTProto clients before exit (max 10s),
+  // so 15s is more than enough. No longer need 120s delay.
+  const STARTUP_DELAY_MS = 15 * 1000;
+  console.log(`[Worker] Waiting ${STARTUP_DELAY_MS / 1000}s for old instance SIGTERM shutdown to complete...`);
   await new Promise((r) => setTimeout(r, STARTUP_DELAY_MS));
   console.log("[Worker] Startup delay complete — safe to connect Telegram sessions.");
 
