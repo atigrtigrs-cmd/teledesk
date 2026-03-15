@@ -274,7 +274,7 @@ export default function Messages() {
   });
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0">
       {/* ── Column 1: Dialog List ── */}
       <DialogList
         dialogs={dialogsData ?? []}
@@ -317,7 +317,7 @@ export default function Messages() {
         {selectedDialogId ? (
           <motion.div
             key={`chat-${selectedDialogId}`}
-            className="flex-1 min-w-0"
+            className="flex-1 min-w-0 min-h-0"
             initial={{ opacity: 0, x: 14 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -10 }}
@@ -333,7 +333,7 @@ export default function Messages() {
         ) : (
           <motion.div
             key="chat-empty"
-            className="flex-1 flex items-center justify-center bg-background"
+            className="flex-1 min-h-0 flex items-center justify-center bg-background"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -352,6 +352,7 @@ export default function Messages() {
         {selectedDialogId && showContactPanel && (
           <motion.div
             key={`contact-${selectedDialogId}`}
+            className="min-h-0"
             initial={{ opacity: 0, x: 24 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 24 }}
@@ -453,17 +454,17 @@ function DialogList({
   ].filter(Boolean) as string[];
 
   return (
-    <div style={{ width: width ?? 320 }} className="shrink-0 border-r border-border flex flex-col bg-[oklch(0.11_0.006_240)]">
+    <div style={{ width: width ?? 320 }} className="min-w-0 shrink-0 border-r border-border flex h-full min-h-0 flex-col bg-[oklch(0.11_0.006_240)]">
       {/* Header */}
       <div className="px-3 pt-3 pb-2 shrink-0 border-b border-border/60">
         <div className="flex items-center justify-between gap-2 mb-2">
-          <div>
+          <div className="min-w-0 flex-1">
             <h2 className="text-base font-bold">Сообщения</h2>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
               {dialogs.length} в списке{filterSummary.length ? ` · ${filterSummary.join(" · ")}` : ""}
             </p>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               onClick={onSync}
               disabled={isSyncing}
@@ -506,10 +507,10 @@ function DialogList({
         </div>
 
         {/* Quick account switch */}
-        <div className="flex gap-1 mt-2 overflow-x-auto pb-1 scrollbar-none">
+        <div className="mt-2 flex flex-wrap gap-1">
           <button
             onClick={() => onAccountChange(undefined)}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors ${
+            className={`max-w-full rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors ${
               !selectedAccountId
                 ? "bg-primary/15 text-primary"
                 : "bg-muted/25 text-muted-foreground hover:text-foreground hover:bg-muted/40"
@@ -521,11 +522,12 @@ function DialogList({
             <button
               key={acc.id}
               onClick={() => onAccountChange(acc.id)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors ${
+              className={`max-w-[140px] truncate rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors ${
                 selectedAccountId === acc.id
                   ? "bg-primary/15 text-primary"
                   : "bg-muted/25 text-muted-foreground hover:text-foreground hover:bg-muted/40"
               }`}
+              title={acc.label}
             >
               {acc.label}
             </button>
@@ -533,12 +535,12 @@ function DialogList({
         </div>
 
         {/* Status filter tabs */}
-        <div className="flex gap-1 mt-2 overflow-x-auto pb-1 scrollbar-none">
+        <div className="mt-2 flex flex-wrap gap-1">
           {statusFilters.map((f) => (
             <button
               key={f.value}
               onClick={() => onStatusFilterChange(f.value)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors ${
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors ${
                 statusFilter === f.value
                   ? "bg-primary/15 text-primary"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
@@ -641,7 +643,7 @@ function DialogList({
       </div>
 
       {/* Dialog list */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -890,7 +892,7 @@ function ChatView({
   const statusCfg = statusConfig[dialog.status];
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-background">
+    <div className="flex h-full min-h-0 flex-1 flex-col min-w-0 bg-background">
       {/* Chat header */}
       <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card/50 shrink-0">
         {/* Contact info clickable */}
@@ -982,7 +984,7 @@ function ChatView({
       </div>
 
       {/* Messages area */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5">
+      <div ref={messagesContainerRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-1.5">
         {/* Load more indicator */}
         {isLoadingMore && (
           <div className="flex justify-center py-2">
