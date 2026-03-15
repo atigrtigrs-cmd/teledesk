@@ -648,10 +648,62 @@ function ChatView({
   const prevMsgCountRef = useRef(0);
   const isInitialLoadRef = useRef(true);
 
+  // Pagination state
+  const [allMessages, setAllMessages] = useState<any[]>([]);
+  const [cursor, setCursor] = useState<number | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
+  const utils = trpc.useUtils();
+
   const { data: dialogData, refetch: refetchDialog } = trpc.dialogs.get.useQuery({ id: dialogId });
-  const { data: msgs, refetch: refetchMsgs } = trpc.messages.list.useQuery({ dialogId });
+  const { data: msgPage, refetch: refetchMsgs } = trpc.messages.list.useQuery({ dialogId, limit: 50 });
   const { data: quickReplies } = trpc.quickReplies.list.useQuery();
   const { data: allUsers } = trpc.users.list.useQuery();
+
+  // Load initial page
+  useEffect(() => {
+    if (msgPage) {
+      setAllMessages(msgPage.messages);
+      setHasMore(msgPage.hasMore);
+      setCursor(msgPage.nextCursor);
+    }
+  }, [msgPage]);
+
+  // Load older messages
+  const loadOlderMessages = useCallback(async () => {
+    if (!hasMore || !cursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setIsLoadingMore(true);
+    try {
+      const older = await utils.messages.list.fetch({ dialogId, cursor, limit: 50 });
+      setAllMessages(prev => [...older.messages, ...prev]);
+      setHasMore(older.hasMore);
+      setCursor(older.nextCursor);
+    } catch { /* ignore */ }
+    loadingMoreRef.current = false;
+    setIsLoadingMore(false);
+  }, [dialogId, cursor, hasMore, utils]);
+
+  // Scroll handler: load more when scrolled to top
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      if (container.scrollTop < 100 && hasMore && !loadingMoreRef.current) {
+        const prevHeight = container.scrollHeight;
+        loadOlderMessages().then(() => {
+          // Maintain scroll position after prepending
+          requestAnimationFrame(() => {
+            const newHeight = container.scrollHeight;
+            container.scrollTop = newHeight - prevHeight;
+          });
+        });
+      }
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [hasMore, loadOlderMessages]);
 
   const sendMutation = trpc.messages.send.useMutation({
     onSuccess: () => { setText(""); refetchMsgs(); refetchDialog(); },
@@ -684,11 +736,14 @@ function ChatView({
     setShowQuickReplies(false);
     prevMsgCountRef.current = 0;
     isInitialLoadRef.current = true;
+    setAllMessages([]);
+    setCursor(undefined);
+    setHasMore(false);
   }, [dialogId]);
 
   // Scroll: instant on first load, smooth on new messages
   useEffect(() => {
-    if (!msgs) return;
+    if (!allMessages.length) return;
     if (isInitialLoadRef.current) {
       // First load — instant jump to bottom, no animation
       requestAnimationFrame(() => {
@@ -697,13 +752,13 @@ function ChatView({
         }
       });
       isInitialLoadRef.current = false;
-      prevMsgCountRef.current = msgs.length;
-    } else if (msgs.length > prevMsgCountRef.current) {
+      prevMsgCountRef.current = allMessages.length;
+    } else if (allMessages.length > prevMsgCountRef.current && !isLoadingMore) {
       // New message arrived — smooth scroll
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      prevMsgCountRef.current = msgs.length;
+      prevMsgCountRef.current = allMessages.length;
     }
-  }, [msgs]);
+  }, [allMessages, isLoadingMore]);
 
   const dialog = dialogData?.dialog;
   const contact = dialogData?.contact;
@@ -847,16 +902,27 @@ function ChatView({
       )}
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5">
-        {!msgs?.length ? (
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5">
+        {/* Load more indicator */}
+        {isLoadingMore && (
+          <div className="flex justify-center py-2">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        )}
+        {hasMore && !isLoadingMore && (
+          <div className="flex justify-center py-1">
+            <button onClick={loadOlderMessages} className="text-xs text-primary hover:underline">Загрузить ранние сообщения</button>
+          </div>
+        )}
+        {!allMessages.length ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-sm text-muted-foreground">Нет сообщений</p>
           </div>
         ) : (
-          msgs.map((msg, idx) => {
+          allMessages.map((msg, idx) => {
             const isOutgoing = msg.direction === "outgoing";
             const isNote = msg.direction === "note";
-            const prevMsg = idx > 0 ? msgs[idx - 1] : null;
+            const prevMsg = idx > 0 ? allMessages[idx - 1] : null;
             const showDateSep = !prevMsg || !isSameDay(msg.createdAt, prevMsg.createdAt);
 
             if (isNote) {

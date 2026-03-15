@@ -541,11 +541,30 @@ export const appRouter = router({
   // ─── Messages ───────────────────────────────────────────────────────────────
   messages: router({
     list: protectedProcedure
-      .input(z.object({ dialogId: z.number() }))
+      .input(z.object({
+        dialogId: z.number(),
+        cursor: z.number().optional(), // message ID cursor for pagination
+        limit: z.number().min(1).max(200).default(50),
+      }))
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-        return db.select().from(messages).where(eq(messages.dialogId, input.dialogId)).orderBy(messages.createdAt);
+        const { dialogId, cursor, limit } = input;
+        // Cursor-based: load `limit` messages BEFORE the cursor (older messages)
+        // If no cursor, load the latest `limit` messages
+        const conditions = cursor
+          ? and(eq(messages.dialogId, dialogId), sql`${messages.id} < ${cursor}`)
+          : eq(messages.dialogId, dialogId);
+        const rows = await db.select().from(messages)
+          .where(conditions)
+          .orderBy(desc(messages.id))
+          .limit(limit + 1); // fetch one extra to check if there are more
+        const hasMore = rows.length > limit;
+        if (hasMore) rows.pop();
+        // Return in chronological order (oldest first)
+        rows.reverse();
+        const nextCursor = hasMore && rows.length > 0 ? rows[0].id : undefined;
+        return { messages: rows, nextCursor, hasMore };
       }),
 
     send: protectedProcedure
@@ -588,7 +607,7 @@ export const appRouter = router({
         await db.insert(messages).values({
           dialogId: input.dialogId,
           direction: "outgoing",
-          senderId: ctx.user.id,
+          senderId: String(ctx.user.id),
           senderName: ctx.user.name ?? ctx.user.email ?? `User #${ctx.user.id}`,
           text: input.text,
           isRead: true,
@@ -621,7 +640,7 @@ export const appRouter = router({
         await db.insert(messages).values({
           dialogId: input.dialogId,
           direction: "note",
-          senderId: ctx.user.id,
+          senderId: String(ctx.user.id),
           senderName: ctx.user.name ?? ctx.user.email ?? `User #${ctx.user.id}`,
           text: input.text,
           isRead: true,

@@ -438,3 +438,31 @@
   - [x] SEC-6: ErrorBoundary hides stack trace in production
   - [x] INFRA-1: Worker intervals cleared on SIGTERM shutdown (prevents memory leaks)
 - [x] All 27 tests passing, 0 TS errors
+
+## FIX ALL REMAINING AUDIT ISSUES — Stage 2 + Stage 3 (Mar 15, 2026)
+
+### Stage 2 (High Priority)
+- [ ] PERF-1: Cursor-based pagination for messages (load 50 at a time, scroll to load more)
+- [ ] FEAT-1: Wire auto-replies to incoming message handler (first_message, outside_hours, keyword)
+- [ ] UX-1: Mobile responsiveness for Messages page (sidebar collapse, responsive layout)
+- [ ] UX-2: Replace Funnels page placeholder with real kanban board or remove from nav
+- [ ] DOC-1: Fix audit document — Render is Starter ($7/mo), not Free tier
+
+### Stage 3 (Improvements)
+- [ ] ARCH-1: Split routers.ts (1800+ lines) into modular files under server/routers/
+- [ ] SEC-7: Add rate limiting on API endpoints (express-rate-limit)
+- [ ] TEST-1: Add more vitest test coverage (target: 50+ tests for critical paths)
+
+## Data Restoration (Mar 15, 2026)
+- [x] Fix senderId column: INT → VARCHAR(64), drop FK to users table
+- [x] Study Telegram export format (result.json structure, chat types, message formats)
+- [x] Create account for Irina (+79059374229, accountId 210007, status=disconnected)
+- [x] Import 3 Telegram exports: 104,440 new messages, 1,143 new dialogs, 0 errors
+- [x] Final DB: 119,016 messages, 1,158 dialogs, 1,468 contacts across 3 accounts
+
+## Audit Fixes — Stage 2+3 Implementation (Mar 15, 2026)
+- [x] PERF-1: Cursor-based pagination for messages (backend: cursor/limit params, frontend: scroll-to-load-more)
+- [x] FEAT-1: Auto-replies wired to incoming message handler (first_message + keyword triggers)
+- [x] SEC-7: Rate limiting on API (express-rate-limit, 120 req/min per IP)
+- [x] CLEANUP: Removed 8 dead pages (AutoReplies, ComponentShowcase, Dashboard, DialogDetail, Inbox, QuickReplies, Analytics, Settings)
+- [x] TEST: 29 new vitest tests for audit fixes (total: 56 tests, all passing)

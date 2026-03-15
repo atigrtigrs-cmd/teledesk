@@ -124,7 +124,7 @@ export const messages = mysqlTable("messages", {
   dialogId: int("dialogId").notNull().references(() => dialogs.id),
   telegramMessageId: varchar("telegramMessageId", { length: 64 }),
   direction: mysqlEnum("direction", ["incoming", "outgoing", "note"]).notNull(),
-  senderId: int("senderId").references(() => users.id),
+  senderId: varchar("senderId", { length: 64 }),
   text: text("text"),
   mediaUrl: text("mediaUrl"),
   mediaType: mysqlEnum("mediaType", ["photo", "video", "audio", "document", "voice", "sticker"]),

@@ -12,7 +12,7 @@ import { StringSession } from "telegram/sessions/index.js";
 import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { getDb } from "./db";
-import { telegramAccounts, dialogs, messages, contacts, Dialog } from "../drizzle/schema";
+import { telegramAccounts, dialogs, messages, contacts, autoReplies, Dialog } from "../drizzle/schema";
 import { eq, and, desc, inArray, gt, isNotNull, sql } from "drizzle-orm";
 import { createBitrixDeal, addBitrixTimelineComment } from "./bitrix";
 import { invokeLLM } from "./_core/llm";
@@ -794,6 +794,15 @@ async function handleIncomingMessage(accountId: number, event: NewMessageEvent):
     );
 
     console.log(`[Telegram] Incoming (${peerType}) in dialog #${dialogId}: "${text.substring(0, 50)}"`);
+
+    // ── Auto-reply check ─────────────────────────────────────────────────
+    if (peerType === "user" && text) {
+      try {
+        await processAutoReplies(accountId, dialogId, senderId, text, isNewDialog);
+      } catch (autoErr) {
+        console.error("[Telegram] Auto-reply error:", autoErr);
+      }
+    }
   } catch (err) {
     console.error("[Telegram] Error handling incoming message:", err);
   }
@@ -1591,4 +1600,79 @@ export async function bulkUpdateAvatars(): Promise<{ updated: number; skipped: n
 
   console.log(`[BulkAvatars] Done: ${updated} updated, ${skipped} skipped, ${errors} errors out of ${total}`);
   return { updated, skipped, errors, total };
+}
+
+
+// ─── Auto-Reply Processing ─────────────────────────────────────────────────
+// Checks active auto-reply rules and sends a response if matched.
+// Triggers: "first_message" (only for new dialogs), "keyword" (text contains keyword)
+// "outside_hours" is reserved for future use.
+
+async function processAutoReplies(
+  accountId: number,
+  dialogId: number,
+  senderTelegramId: string,
+  incomingText: string,
+  isNewDialog: boolean
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Fetch active auto-replies for this account (or global ones with null telegramAccountId)
+  const rules = await db
+    .select()
+    .from(autoReplies)
+    .where(eq(autoReplies.isActive, true));
+
+  const applicableRules = rules.filter(r =>
+    r.telegramAccountId === null || r.telegramAccountId === accountId
+  );
+
+  if (!applicableRules.length) return;
+
+  for (const rule of applicableRules) {
+    let shouldFire = false;
+
+    if (rule.trigger === "first_message" && isNewDialog) {
+      shouldFire = true;
+    } else if (rule.trigger === "keyword" && rule.keyword) {
+      const keywords = rule.keyword.split(",").map(k => k.trim().toLowerCase()).filter(Boolean);
+      const lowerText = incomingText.toLowerCase();
+      shouldFire = keywords.some(kw => lowerText.includes(kw));
+    }
+    // "outside_hours" — skip for now (needs business hours config)
+
+    if (!shouldFire) continue;
+
+    try {
+      // Send via Telegram
+      await sendTelegramMessage(accountId, senderTelegramId, rule.text);
+
+      // Save to DB as outgoing message
+      await db.insert(messages).values({
+        dialogId,
+        direction: "outgoing",
+        text: rule.text,
+        senderName: "[Авто-ответ]",
+        createdAt: new Date(),
+      });
+
+      // Update dialog lastMessage
+      await db
+        .update(dialogs)
+        .set({
+          lastMessageText: rule.text.substring(0, 255),
+          lastMessageAt: new Date(),
+        })
+        .where(eq(dialogs.id, dialogId));
+
+      emitInboxEvent({ type: "new_message", dialogId, accountId });
+      console.log(`[AutoReply] Fired rule "${rule.name}" (${rule.trigger}) in dialog #${dialogId}`);
+
+      // Only fire the first matching rule per message
+      break;
+    } catch (sendErr) {
+      console.error(`[AutoReply] Failed to send for rule "${rule.name}":`, sendErr);
+    }
+  }
 }

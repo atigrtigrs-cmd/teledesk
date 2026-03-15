@@ -1,0 +1,26 @@
+{
+  "query": "SELECT 'messages' as tbl, COUNT(*) as cnt FROM messages UNION ALL SELECT 'dialogs', COUNT(*) FROM dialogs UNION ALL SELECT 'contacts', COUNT(*) FROM contacts UNION ALL SELECT 'telegram_accounts', COUNT(*) FROM telegram_accounts;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3LPssBLFuVbNm9U.root --database bdpiDWPftxaP5joCkvKLNw --execute SELECT 'messages' as tbl, COUNT(*) as cnt FROM messages UNION ALL SELECT 'dialogs', COUNT(*) FROM dialogs UNION ALL SELECT 'contacts', COUNT(*) FROM contacts UNION ALL SELECT 'telegram_accounts', COUNT(*) FROM telegram_accounts;",
+  "rows": [
+    {
+      "tbl": "telegram_accounts",
+      "cnt": "2"
+    },
+    {
+      "tbl": "dialogs",
+      "cnt": "5"
+    },
+    {
+      "tbl": "contacts",
+      "cnt": "1468"
+    },
+    {
+      "tbl": "messages",
+      "cnt": "1492"
+    }
+  ],
+  "messages": [],
+  "stdout": "tbl\tcnt\ntelegram_accounts\t2\ndialogs\t5\ncontacts\t1468\nmessages\t1492\n",
+  "stderr": "",
+  "execution_time_ms": 677
+}
