@@ -398,14 +398,14 @@
 - [x] Prepared comprehensive audit document (AUDIT.md) with 12 prioritized issues
 
 ## DEFINITIVE FIX: AUTH_KEY_DUPLICATED (Mar 15, 2026)
-- [ ] Deep diagnosis: understand exact failure sequence on Render deploys
-- [ ] Implement a solution that guarantees single MTProto connection per session
-- [ ] Verify real-time messaging works after deploy
-- [ ] Confirm: incoming messages arrive, outgoing messages send, sync works
+- [x] Deep diagnosis: Render zero-downtime deploy starts new instance before killing old → two MTProto connections with same auth_key → Telegram kills session permanently
+- [x] Implemented graceful SIGTERM handler in server/_core/index.ts: calls disconnectAll() with 10s timeout before process.exit(0)
+- [x] AUTH_KEY_DUPLICATED now clears sessionString + sets status=disconnected in both telegram.ts and worker.ts
+- [ ] Verify on Render: re-login accounts, deploy, confirm sessions survive
 
 ## DEFINITIVE FIX: Graceful Shutdown + Real Status (Mar 15, 2026)
-- [ ] Add SIGTERM handler: disconnect all MTProto clients before process exits (prevents AUTH_KEY_DUPLICATED on Render redeploy)
-- [ ] Fix account status display: show real connection state, not just DB field
-- [ ] Handle AUTH_KEY_DUPLICATED in connectAccount: mark session as dead, require re-login
-- [ ] Clean up deleted accounts from DB
-- [ ] Test and deploy
+- [x] Added SIGTERM/SIGINT handler in server/_core/index.ts that calls disconnectAll() before exit
+- [x] lastError now displayed in Accounts UI as red banner when status=disconnected
+- [x] "Переподключить" button opens QR login for accounts with AUTH_KEY_DUPLICATED error
+- [x] Accounts already deleted by user
+- [x] All 27 tests passing, TypeScript 0 errors
