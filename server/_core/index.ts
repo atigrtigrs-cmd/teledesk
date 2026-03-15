@@ -64,29 +64,10 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  app.set("trust proxy", 1);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.use(cookieParser());
-
-  app.use((req, res, next) => {
-    const startedAt = Date.now();
-    res.on("finish", () => {
-      const durationMs = Date.now() - startedAt;
-      const isApiRequest = req.path.startsWith("/api/");
-      const isSlow = durationMs >= 5000;
-      const isServerError = res.statusCode >= 500;
-      if (!isApiRequest || (!isSlow && !isServerError)) return;
-
-      const forwardedFor = req.headers["x-forwarded-for"];
-      const requestId = req.headers["x-request-id"] ?? req.headers["x-render-request-id"] ?? "n/a";
-      console.warn(
-        `[HTTP] ${req.method} ${req.originalUrl} status=${res.statusCode} durationMs=${durationMs} ip=${req.ip} forwardedFor=${forwardedFor ?? "n/a"} requestId=${requestId}`
-      );
-    });
-    next();
-  });
 
   // Rate limiting
   const apiLimiter = rateLimit({

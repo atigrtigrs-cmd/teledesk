@@ -84,20 +84,6 @@ describe("Rate limiting", () => {
     const serverCode = fs.readFileSync("server/_core/index.ts", "utf-8");
     expect(serverCode).toContain('app.use("/api/trpc", apiLimiter)');
   });
-
-  it("server trusts first proxy hop for Render-compatible rate limiting", async () => {
-    const fs = await import("fs");
-    const serverCode = fs.readFileSync("server/_core/index.ts", "utf-8");
-    expect(serverCode).toContain('app.set("trust proxy", 1)');
-  });
-
-  it("slow and 5xx API requests are logged with request metadata", async () => {
-    const fs = await import("fs");
-    const serverCode = fs.readFileSync("server/_core/index.ts", "utf-8");
-    expect(serverCode).toContain("[HTTP]");
-    expect(serverCode).toContain("durationMs=");
-    expect(serverCode).toContain("requestId=");
-  });
 });
 
 // ─── 4. Dead page cleanup tests ────────────────────────────────────────────
