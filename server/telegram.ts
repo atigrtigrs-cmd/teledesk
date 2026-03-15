@@ -438,18 +438,10 @@ export async function shutdownTelegram(): Promise<void> {
     new Promise(r => setTimeout(r, DISCONNECT_TIMEOUT_MS)),
   ]);
 
-  // Step 3: Update DB statuses (best-effort, don't block exit)
-  try {
-    const db = await getDb();
-    if (db && ids.length > 0) {
-      for (const id of ids) {
-        await db.update(telegramAccounts)
-          .set({ status: "disconnected" })
-          .where(eq(telegramAccounts.id, id))
-          .catch(() => {});
-      }
-    }
-  } catch {}
+  // Step 3: Do NOT mark DB statuses as disconnected here.
+  // During zero-downtime deploys, the new instance may already have restored
+  // these same sessions and set them back to active. Writing "disconnected"
+  // from the old instance races with the new instance and leaves stale DB state.
 
   console.log("[Telegram] ━━━ SHUTDOWN COMPLETE ━━━");
 }
@@ -1324,7 +1316,12 @@ export async function keepAliveAll(): Promise<void> {
   for (const [accountId, client] of Array.from(activeClients.entries())) {
     try {
       await client.getMe();
-      // console.log(`[KeepAlive] Account #${accountId} is alive`);
+      if (db) {
+        await db.update(telegramAccounts)
+          .set({ status: "active", lastError: null })
+          .where(eq(telegramAccounts.id, accountId))
+          .catch(() => {});
+      }
     } catch (err: any) {
       const errMsg = String(err?.message ?? err ?? "");
       if (errMsg.includes("AUTH_KEY_DUPLICATED")) {
