@@ -1187,7 +1187,7 @@ function ContactPanel({ dialogId, onClose }: { dialogId: number; onClose: () => 
   const avatarColor = getAvatarColor(contactName);
 
   return (
-    <div className="w-[280px] shrink-0 border-l border-border bg-[oklch(0.11_0.006_240)] flex flex-col overflow-y-auto">
+    <div className="flex h-full min-h-0 w-[320px] max-w-[34vw] min-w-[300px] shrink-0 flex-col overflow-y-auto border-l border-border bg-[oklch(0.11_0.006_240)]">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
         <p className="font-semibold text-sm">Контакт</p>
@@ -1229,22 +1229,22 @@ function ContactPanel({ dialogId, onClose }: { dialogId: number; onClose: () => 
       <div className="px-4 py-3 space-y-2 border-b border-border">
         <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Диалог</p>
         {account && (
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex items-start justify-between gap-3 text-xs">
             <span className="text-muted-foreground">Аккаунт</span>
-            <span className="font-medium">@{account.username ?? account.phone}</span>
+            <span className="min-w-0 text-right font-medium break-all">@{account.username ?? account.phone}</span>
           </div>
         )}
         {assignedUser && (
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex items-start justify-between gap-3 text-xs">
             <span className="text-muted-foreground">Менеджер</span>
-            <span className="font-medium">{assignedUser.name ?? assignedUser.email}</span>
+            <span className="min-w-0 text-right font-medium break-words">{assignedUser.name ?? assignedUser.email}</span>
           </div>
         )}
         {dialog?.bitrixDealId && (
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex items-start justify-between gap-3 text-xs">
             <span className="text-muted-foreground">Bitrix</span>
             <a href={`https://bitrix24.ru/crm/deal/details/${dialog.bitrixDealId}/`} target="_blank" rel="noopener noreferrer"
-              className="text-primary flex items-center gap-1 hover:underline">
+              className="flex min-w-0 items-center gap-1 text-right text-primary hover:underline">
               #{dialog.bitrixDealId} <ExternalLink className="h-3 w-3" />
             </a>
           </div>
@@ -1253,15 +1253,15 @@ function ContactPanel({ dialogId, onClose }: { dialogId: number; onClose: () => 
 
       {/* AI Summary Note */}
       <div className="px-4 py-3 border-b border-border">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <p className="flex min-w-0 items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
             <Sparkles className="h-3 w-3 text-primary" />
             ИИ-анализ
           </p>
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 gap-1 text-[10px] text-primary hover:text-primary hover:bg-primary/10"
+            className="h-6 shrink-0 gap-1 text-[10px] text-primary hover:bg-primary/10 hover:text-primary"
             onClick={() => summarizeMutation.mutate({ dialogId })}
             disabled={summarizeMutation.isPending}
           >
@@ -1280,7 +1280,7 @@ function ContactPanel({ dialogId, onClose }: { dialogId: number; onClose: () => 
             {/* Sentiment badge */}
             {dialog.sentiment && (
               <div className="flex items-center gap-1.5">
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                <span className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                   dialog.sentiment === "positive" ? "bg-green-500/15 text-green-400 border border-green-500/20" :
                   dialog.sentiment === "negative" ? "bg-red-500/15 text-red-400 border border-red-500/20" :
                   "bg-blue-500/15 text-blue-400 border border-blue-500/20"
@@ -1290,7 +1290,7 @@ function ContactPanel({ dialogId, onClose }: { dialogId: number; onClose: () => 
               </div>
             )}
             {/* Summary text */}
-            <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line bg-primary/5 rounded-lg p-2.5 border border-primary/10">
+            <div className="max-h-[38vh] overflow-y-auto break-words rounded-lg border border-primary/10 bg-primary/5 p-2.5 text-xs leading-relaxed text-muted-foreground whitespace-pre-line">
               {dialog.aiSummary}
             </div>
           </div>
