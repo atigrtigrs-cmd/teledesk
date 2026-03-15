@@ -419,3 +419,22 @@
 - [x] All 7 indexes created via SQL (6.4s for 337K+ rows), verified
 - [x] Schema updated in drizzle/schema.ts with index definitions
 - [x] All 27 tests passing, 0 TS errors
+
+## COMPREHENSIVE AUDIT v2 (Mar 15, 2026)
+- [x] Backend audit: routers.ts (1800+ lines), db.ts, error handling, input validation
+- [x] Backend audit: security — auth bypass, SQL injection, XSS, CSRF, rate limiting
+- [x] Backend audit: performance — N+1 queries, missing pagination, memory leaks
+- [x] Frontend audit: all 12+ pages — UX flows, loading states, error states, empty states
+- [x] Frontend audit: responsiveness, accessibility, keyboard navigation
+- [x] Frontend audit: design consistency, color contrast, typography, spacing
+- [x] Infrastructure audit: Telegram worker, SSE, deploy pipeline, env vars
+- [x] Written AUDIT_V2.md — 24 findings across 4 perspectives, 3 priority stages
+- [x] Implemented 7 critical fixes (Stage 1):
+  - [x] SEC-1: debugStatus → protectedProcedure (was public, exposed env vars)
+  - [x] SEC-2: Bitrix webhookUrl masked in API response
+  - [x] SEC-3: 15+ admin procedures → adminProcedure (accounts, Bitrix, bot management)
+  - [x] SEC-4: SSE connection limits (max 50 total, max 3 per user)
+  - [x] SEC-5: Input validation .max() on all string inputs (messages 4096, session 5000)
+  - [x] SEC-6: ErrorBoundary hides stack trace in production
+  - [x] INFRA-1: Worker intervals cleared on SIGTERM shutdown (prevents memory leaks)
+- [x] All 27 tests passing, 0 TS errors

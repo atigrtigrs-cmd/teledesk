@@ -20,19 +20,28 @@ export type InboxEvent =
   | { type: "sync_complete"; totalSynced: number; totalErrors: number; accounts: { id: number; username: string | null; dialogs: number; error?: string }[] }
   | { type: "ping" };
 
+// ─── AUDIT FIX: Connection limits ─────────────────────────────────────────────
+const MAX_TOTAL_CONNECTIONS = 50;
+const MAX_PER_USER = 3;
+
 // ─── Connected clients registry ───────────────────────────────────────────────
 
-const clients = new Set<Response>();
+interface SSEClient {
+  res: Response;
+  userId: number;
+}
+
+const clients = new Set<SSEClient>();
 
 // ─── Emit to all connected clients ───────────────────────────────────────────
 
 export function emitInboxEvent(event: InboxEvent): void {
   const data = `data: ${JSON.stringify(event)}\n\n`;
-  for (const res of Array.from(clients)) {
+  for (const client of Array.from(clients)) {
     try {
-      res.write(data);
+      client.res.write(data);
     } catch {
-      clients.delete(res);
+      clients.delete(client);
     }
   }
 }
@@ -40,13 +49,27 @@ export function emitInboxEvent(event: InboxEvent): void {
 // ─── SSE HTTP handler (register as GET /api/events) ──────────────────────────
 
 export async function sseHandler(req: Request, res: Response): Promise<void> {
-  // BUG-10 FIX: require valid session cookie before allowing SSE subscription
-  // Previously: any unauthenticated user could subscribe and receive all inbox events
+  // Require valid session cookie before allowing SSE subscription
   const token = (req as any).cookies?.[AUTH_COOKIE_NAME];
   const payload = token ? await verifyToken(token) : null;
   if (!payload) {
     res.status(401).json({ error: "Unauthorized" });
     return;
+  }
+
+  // AUDIT FIX: Enforce connection limits
+  if (clients.size >= MAX_TOTAL_CONNECTIONS) {
+    res.status(429).json({ error: "Too many connections" });
+    return;
+  }
+
+  const userId = payload.userId;
+  const userConnections = Array.from(clients).filter(c => c.userId === userId);
+  if (userConnections.length >= MAX_PER_USER) {
+    // Close oldest connection for this user to make room
+    const oldest = userConnections[0];
+    try { oldest.res.end(); } catch {}
+    clients.delete(oldest);
   }
 
   res.setHeader("Content-Type", "text/event-stream");
@@ -58,7 +81,8 @@ export async function sseHandler(req: Request, res: Response): Promise<void> {
   // Send an initial ping so the browser knows the connection is live
   res.write(`data: ${JSON.stringify({ type: "ping" })}\n\n`);
 
-  clients.add(res);
+  const client: SSEClient = { res, userId };
+  clients.add(client);
 
   // Keep-alive ping every 25 s (prevents proxy timeouts)
   const keepAlive = setInterval(() => {
@@ -66,12 +90,12 @@ export async function sseHandler(req: Request, res: Response): Promise<void> {
       res.write(`data: ${JSON.stringify({ type: "ping" })}\n\n`);
     } catch {
       clearInterval(keepAlive);
-      clients.delete(res);
+      clients.delete(client);
     }
   }, 25_000);
 
   req.on("close", () => {
     clearInterval(keepAlive);
-    clients.delete(res);
+    clients.delete(client);
   });
 }

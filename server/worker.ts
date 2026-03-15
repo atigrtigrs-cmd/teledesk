@@ -91,6 +91,9 @@ const activeClients = new Map<number, TelegramClient>();
 // Set of accountIds currently being connected (prevent parallel attempts)
 const connectingAccounts = new Set<number>();
 
+// AUDIT FIX: Track interval IDs for cleanup on shutdown
+const workerIntervals: ReturnType<typeof setInterval>[] = [];
+
 // Cooldown map: accountId → timestamp when cooldown expires (prevents retry spam after AUTH_KEY_DUPLICATED)
 const connectionCooldown = new Map<number, number>();
 
@@ -266,8 +269,11 @@ async function disconnectAccount(accountId: number): Promise<void> {
 
 async function shutdown(): Promise<void> {
   console.log(
-    `[Worker] Shutting down — disconnecting ${activeClients.size} clients...`
+    `[Worker] Shutting down — clearing ${workerIntervals.length} intervals, disconnecting ${activeClients.size} clients...`
   );
+  // AUDIT FIX: Clear all intervals first
+  for (const id of workerIntervals) clearInterval(id);
+  workerIntervals.length = 0;
   const ids = Array.from(activeClients.keys());
   await Promise.allSettled(ids.map((id) => disconnectAccount(id)));
   if (ids.length > 0) {
@@ -1154,22 +1160,23 @@ async function main(): Promise<void> {
   // Initial session restore
   await restoreAllSessions();
 
-  // Poll for new accounts every 30 seconds
-  setInterval(() => {
+  // AUDIT FIX: Store interval IDs so we can clear them on shutdown
+  const pollInterval = setInterval(() => {
     pollForNewAccounts().catch((err) =>
       console.error("[Worker] Poll error:", err)
     );
   }, 30 * 1000);
+  workerIntervals.push(pollInterval);
 
-  // Keep-alive ping every 3 minutes
-  setInterval(() => {
+  const keepAliveInterval = setInterval(() => {
     keepAliveAll().catch((err) =>
       console.error("[Worker] KeepAlive error:", err)
     );
   }, 3 * 60 * 1000);
+  workerIntervals.push(keepAliveInterval);
 
   // FIX #7: Watchdog reconnect skips banned/revoked accounts
-  setInterval(async () => {
+  const watchdogInterval = setInterval(async () => {
     console.log("[Worker] Watchdog: checking connections...");
     const accounts = await db
       .select()
@@ -1202,9 +1209,10 @@ async function main(): Promise<void> {
       );
     }
   }, 5 * 60 * 1000);
+  workerIntervals.push(watchdogInterval);
 
   // Sync watchdog: check for accounts with syncStatus='idle' or lastSyncAt=null every 2 minutes
-  setInterval(async () => {
+  const syncWatchdogInterval = setInterval(async () => {
     const accounts = await db
       .select()
       .from(telegramAccounts)
@@ -1232,6 +1240,7 @@ async function main(): Promise<void> {
         .finally(() => syncingAccounts.delete(acc.id));
     }
   }, 2 * 60 * 1000);
+  workerIntervals.push(syncWatchdogInterval);
 
   console.log("[Worker] All intervals started. Worker is running.");
 

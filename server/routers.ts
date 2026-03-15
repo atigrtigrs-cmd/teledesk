@@ -1,6 +1,6 @@
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, adminProcedure, router } from "./_core/trpc";
 import { registerUser, loginUser, createToken, AUTH_COOKIE_NAME } from "./authService";
 import { getDb } from "./db";
 import {
@@ -147,7 +147,9 @@ export const appRouter = router({
       return accs.map(a => a.id);
     }),
 
-    debugStatus: publicProcedure.query(async () => {
+    debugStatus: protectedProcedure.query(async ({ ctx }) => {
+      // AUDIT FIX: was publicProcedure, now requires auth + admin role
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Admin only" });
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const accs = await db.select({
@@ -168,8 +170,6 @@ export const appRouter = router({
           isActiveInMemory: a.status === "active",
         })),
         timestamp: new Date().toISOString(),
-        nodeEnv: process.env.NODE_ENV,
-        uptime: process.uptime(),
       };
     }),
 
@@ -254,13 +254,13 @@ export const appRouter = router({
         return { success: true, message: "Синхронизация будет запущена Worker-ом" };
       }),
 
-    reconnectAll: protectedProcedure
+    reconnectAll: adminProcedure
       .mutation(async () => {
         // Worker handles reconnection automatically via watchdog
         return { success: true, message: "Worker автоматически переподключит аккаунты" };
       }),
 
-    syncAll: protectedProcedure
+    syncAll: adminProcedure
       .mutation(async () => {
         // Reset syncStatus for all accounts — Worker will pick them up and sync
         const db = await getDb();
@@ -320,11 +320,11 @@ export const appRouter = router({
         return acc;
       }),
 
-    connectSessionString: protectedProcedure
+    connectSessionString: adminProcedure
       .input(z.object({
-        sessionString: z.string().min(10),
-        phone: z.string().optional(),
-        firstName: z.string().optional(),
+        sessionString: z.string().min(10).max(5000),
+        phone: z.string().max(20).optional(),
+        firstName: z.string().max(100).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
@@ -549,7 +549,7 @@ export const appRouter = router({
       }),
 
     send: protectedProcedure
-      .input(z.object({ dialogId: z.number(), text: z.string().min(1) }))
+      .input(z.object({ dialogId: z.number(), text: z.string().min(1).max(4096) }))
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -614,7 +614,7 @@ export const appRouter = router({
       }),
 
     addNote: protectedProcedure
-      .input(z.object({ dialogId: z.number(), text: z.string().min(1) }))
+      .input(z.object({ dialogId: z.number(), text: z.string().min(1).max(4096) }))
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -1446,15 +1446,20 @@ export const appRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const [settings] = await db.select().from(bitrixSettings).limit(1);
-      return settings ?? null;
+      if (!settings) return null;
+      // AUDIT FIX: mask webhookUrl — it's essentially an API key
+      const masked = settings.webhookUrl
+        ? "****" + settings.webhookUrl.slice(-8)
+        : null;
+      return { ...settings, webhookUrl: masked, hasWebhook: !!settings.webhookUrl };
     }),
 
-    save: protectedProcedure
+    save: adminProcedure
       .input(z.object({
-        domain: z.string().min(1),
-        webhookUrl: z.string().url(),
-        pipelineId: z.string().optional(),
-        pipelineName: z.string().optional(),
+        domain: z.string().min(1).max(200),
+        webhookUrl: z.string().url().max(500),
+        pipelineId: z.string().max(50).optional(),
+        pipelineName: z.string().max(200).optional(),
         stageId: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
@@ -1617,7 +1622,7 @@ export const appRouter = router({
       return res.json() as Promise<Record<string, any>>;
     }),
     // Approve a pending group — set its category
-    approveGroup: protectedProcedure
+    approveGroup: adminProcedure
       .input(z.object({
         chatId: z.string(),
         category: z.string(),
@@ -1633,7 +1638,7 @@ export const appRouter = router({
         return { success: res.ok, data };
       }),
     // Remove a group from bot
-    removeGroup: protectedProcedure
+    removeGroup: adminProcedure
       .input(z.object({ chatId: z.string() }))
       .mutation(async ({ input }) => {
         const res = await fetch(`${BOT_BASE}/api/groups/remove`, {
@@ -1645,7 +1650,7 @@ export const appRouter = router({
         return { success: res.ok, data };
       }),
     // Update a group's category and language
-    updateGroup: protectedProcedure
+    updateGroup: adminProcedure
       .input(z.object({
         chatId: z.string(),
         title: z.string().optional(),
@@ -1662,7 +1667,7 @@ export const appRouter = router({
         return { success: res.ok, data };
       }),
     // Update a category
-    updateCategory: protectedProcedure
+    updateCategory: adminProcedure
       .input(z.object({
         key: z.string(),
         name: z.string(),
@@ -1679,7 +1684,7 @@ export const appRouter = router({
         return { success: res.ok, data };
       }),
     // Add a new admin
-    addAdmin: protectedProcedure
+    addAdmin: adminProcedure
       .input(z.object({
         telegram_id: z.string(),
         name: z.string(),
@@ -1694,7 +1699,7 @@ export const appRouter = router({
         return { success: res.ok, data };
       }),
     // Remove an admin
-    removeAdmin: protectedProcedure
+    removeAdmin: adminProcedure
       .input(z.object({ telegram_id: z.string() }))
       .mutation(async ({ input }) => {
         const res = await fetch(`${BOT_BASE}/api/admins/${encodeURIComponent(input.telegram_id)}`, {
@@ -1704,7 +1709,7 @@ export const appRouter = router({
         return { success: res.ok, data };
       }),
     // Update a template (correct endpoint)
-    updateTemplate: protectedProcedure
+    updateTemplate: adminProcedure
       .input(z.object({
         key: z.string(),
         ru: z.string(),
@@ -1726,10 +1731,10 @@ export const appRouter = router({
         ]);
         return { success: resRu.ok && resEn.ok };
       }),
-    broadcast: protectedProcedure
+    broadcast: adminProcedure
       .input(z.object({
-        category: z.string(), // category key or "all"
-        text: z.string().min(1),
+        category: z.string().max(50), // category key or "all"
+        text: z.string().min(1).max(4096),
         langFilter: z.enum(["ru", "en", "all"]).default("all"),
       }))
       .mutation(async ({ input }) => {
