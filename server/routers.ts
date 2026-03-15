@@ -25,6 +25,13 @@ import { ENV } from "./_core/env";
 
 const BOT_BASE = "https://telegram-bitrix-bot-b4kx.onrender.com";
 
+function extractAiField(aiSummary: string | null | undefined, label: string): string {
+  if (!aiSummary) return "";
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = aiSummary.match(new RegExp(`${escaped}:\\s*([\\s\\S]*?)(?=\\n(?:Резюме|Темы|Следующий шаг):|$)`, "i"));
+  return match?.[1]?.trim() ?? "";
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -521,22 +528,69 @@ export const appRouter = router({
         const msgs = await db.select().from(messages).where(eq(messages.dialogId, input.dialogId)).orderBy(messages.createdAt);
         if (!msgs.length) return { summary: "Нет сообщений для анализа", sentiment: "neutral" as const, tags: [] as string[], keyTopics: "" as string, recommendation: "" as string };
 
-        // Use sender names if available, fall back to direction labels
-        const transcript = msgs.map(m => {
+        const normalizedMsgs = msgs.map((m) => {
           const sender = m.senderName || (m.direction === "incoming" ? "Клиент" : "Менеджер");
-          return `${sender}: ${m.text ?? "[медиа]"}`;  
+          const rawText = (m.text ?? "[медиа]").replace(/\s+/g, " ").trim();
+          const text = rawText.length > 280 ? `${rawText.slice(0, 277)}...` : rawText;
+          return {
+            sender,
+            direction: m.direction,
+            text,
+            createdAt: m.createdAt,
+          };
+        });
+
+        const firstMessages = normalizedMsgs.slice(0, 12);
+        const recentMessages = normalizedMsgs.slice(-60);
+        const recentWindow = recentMessages.map((m) => {
+          const timestamp = m.createdAt ? new Date(m.createdAt).toISOString().slice(0, 16).replace("T", " ") : "";
+          return `[${timestamp}] ${m.sender}: ${m.text}`;
+        }).join("\n");
+        const openingWindow = firstMessages.map((m) => {
+          const timestamp = m.createdAt ? new Date(m.createdAt).toISOString().slice(0, 16).replace("T", " ") : "";
+          return `[${timestamp}] ${m.sender}: ${m.text}`;
         }).join("\n");
 
-        // Truncate very long transcripts to ~4000 chars to stay within LLM context
-        const maxLen = 4000;
-        const trimmedTranscript = transcript.length > maxLen
-          ? transcript.slice(0, maxLen) + "\n... [переписка обрезана]"
-          : transcript;
+        const incomingCount = normalizedMsgs.filter((m) => m.direction === "incoming").length;
+        const outgoingCount = normalizedMsgs.filter((m) => m.direction === "outgoing").length;
+        const firstAt = normalizedMsgs[0]?.createdAt ? new Date(normalizedMsgs[0].createdAt).toISOString() : "";
+        const lastAt = normalizedMsgs[normalizedMsgs.length - 1]?.createdAt ? new Date(normalizedMsgs[normalizedMsgs.length - 1].createdAt).toISOString() : "";
+        const omittedCount = Math.max(normalizedMsgs.length - firstMessages.length - recentMessages.length, 0);
+        const conversationBrief = [
+          `Всего сообщений: ${normalizedMsgs.length}`,
+          `Сообщений клиента: ${incomingCount}`,
+          `Сообщений менеджера: ${outgoingCount}`,
+          `Первое сообщение: ${firstAt || "—"}`,
+          `Последнее сообщение: ${lastAt || "—"}`,
+          omittedCount > 0 ? `Между началом и концом пропущено ${omittedCount} сообщений.` : "Показана почти вся переписка.",
+        ].join("\n");
 
         const response = await invokeLLM({
           messages: [
-            { role: "system", content: `Ты — AI-аналитик CRM-системы для Telegram. Анализируешь переписки менеджеров с клиентами. Отвечай ТОЛЬКО на русском языке. Будь кратким и конкретным.` },
-            { role: "user", content: `Проанализируй переписку и верни JSON:\n- summary: краткое резюме (3-5 предложений) — о чём диалог, что обсуждали, к чему пришли\n- sentiment: настроение клиента (positive/neutral/negative)\n- tags: массив из 1-3 ключевых тегов на русском (например: "оффер", "оплата", "жалоба", "новый клиент")\n- keyTopics: ключевые темы через запятую (что конкретно обсуждали)\n- recommendation: одно предложение — что менеджеру делать дальше (например: "Отправить оффер", "Ждать ответа клиента", "Закрыть диалог")\n\nПереписка:\n${trimmedTranscript}` },
+            {
+              role: "system",
+              content: `Ты — AI-аналитик CRM для Telegram-диалогов. Отвечай только на русском. Не пересказывай весь чат подряд. Делай короткое рабочее резюме для менеджера: что клиент хочет, на какой стадии диалог, что уже сделали, что остается следующим шагом. Если диалог длинный, приоритет у последних сообщений, но учитывай начало как контекст. Не выдумывай факты.`
+            },
+            {
+              role: "user",
+              content: `Проанализируй диалог и верни JSON.
+
+Требования к полям:
+- summary: 3-4 коротких предложения по сути. Не общий пересказ, а текущее состояние диалога.
+- sentiment: настроение клиента (positive/neutral/negative).
+- tags: 1-4 коротких бизнес-тега на русском.
+- keyTopics: перечисли через запятую конкретные темы диалога.
+- recommendation: одно четкое следующее действие менеджера.
+
+Служебная сводка:
+${conversationBrief}
+
+Начало диалога:
+${openingWindow || "—"}
+
+Последние сообщения:
+${recentWindow || "—"}`
+            },
           ],
           response_format: {
             type: "json_schema",
@@ -567,10 +621,10 @@ export const appRouter = router({
 
         // Build a rich note combining all AI insights
         const aiNote = [
-          result.summary,
-          result.keyTopics ? `\nТемы: ${result.keyTopics}` : "",
-          result.recommendation ? `\nРекомендация: ${result.recommendation}` : "",
-        ].filter(Boolean).join("");
+          result.summary ? `Резюме: ${result.summary}` : "",
+          result.keyTopics ? `Темы: ${result.keyTopics}` : "",
+          result.recommendation ? `Следующий шаг: ${result.recommendation}` : "",
+        ].filter(Boolean).join("\n");
 
         await db.update(dialogs).set({
           aiSummary: aiNote,
@@ -1224,6 +1278,109 @@ export const appRouter = router({
           totalDeals: totalDeals?.count ?? 0,
           totalMessages: totalMessages?.count ?? 0,
           activeAccounts: activeAccounts?.count ?? 0,
+        };
+      }),
+
+    aiInsights: protectedProcedure
+      .input(z.object({
+        period: z.enum(["today", "week", "month", "all"]).default("week"),
+        from: z.string().optional(),
+        to: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) {
+          return { topTopics: [], negativeDialogs: [], followUpDialogs: [] };
+        }
+
+        let since: Date | null = null;
+        let until: Date | null = null;
+        if (input.from) {
+          since = new Date(input.from);
+          until = input.to ? new Date(input.to) : null;
+        } else {
+          const now = new Date();
+          if (input.period === "today") since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          else if (input.period === "week") since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          else if (input.period === "month") since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        }
+
+        const conds: any[] = [sql`${dialogs.aiSummary} IS NOT NULL AND ${dialogs.aiSummary} != ''`];
+        if (since) conds.push(gte(dialogs.lastMessageAt, since));
+        if (until) conds.push(sql`${dialogs.lastMessageAt} <= ${until}`);
+
+        const rows = await db
+          .select({
+            dialogId: dialogs.id,
+            status: dialogs.status,
+            aiSummary: dialogs.aiSummary,
+            sentiment: dialogs.sentiment,
+            lastMessageAt: dialogs.lastMessageAt,
+            lastMessageText: dialogs.lastMessageText,
+            contactFirstName: contacts.firstName,
+            contactLastName: contacts.lastName,
+            contactUsername: contacts.username,
+            accountUsername: telegramAccounts.username,
+          })
+          .from(dialogs)
+          .leftJoin(contacts, eq(dialogs.contactId, contacts.id))
+          .leftJoin(telegramAccounts, eq(dialogs.telegramAccountId, telegramAccounts.id))
+          .where(and(...conds))
+          .orderBy(desc(dialogs.lastMessageAt))
+          .limit(1000);
+
+        const topicCounts = new Map<string, number>();
+        const normalizedRows = rows.map((row) => {
+          const contactName =
+            `${row.contactFirstName ?? ""} ${row.contactLastName ?? ""}`.trim() ||
+            row.contactUsername ||
+            "Неизвестный";
+          const topicsText = extractAiField(row.aiSummary, "Темы");
+          const nextStep = extractAiField(row.aiSummary, "Следующий шаг");
+          const topics = topicsText
+            .split(",")
+            .map((topic) => topic.trim())
+            .filter(Boolean)
+            .slice(0, 6);
+
+          for (const topic of topics) {
+            topicCounts.set(topic, (topicCounts.get(topic) ?? 0) + 1);
+          }
+
+          return {
+            dialogId: row.dialogId,
+            status: row.status,
+            sentiment: row.sentiment,
+            contactName,
+            accountUsername: row.accountUsername ? `@${row.accountUsername}` : "—",
+            lastMessageAt: row.lastMessageAt,
+            lastMessageText: row.lastMessageText,
+            summary: extractAiField(row.aiSummary, "Резюме") || row.aiSummary || "",
+            nextStep,
+            topics,
+          };
+        });
+
+        const topTopics = Array.from(topicCounts.entries())
+          .map(([topic, count]) => ({ topic, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10);
+
+        const negativeDialogs = normalizedRows
+          .filter((row) => row.sentiment === "negative")
+          .slice(0, 8);
+
+        const followUpDialogs = normalizedRows
+          .filter((row) =>
+            row.status === "needs_reply" ||
+            (row.status !== "closed" && row.status !== "resolved" && Boolean(row.nextStep))
+          )
+          .slice(0, 8);
+
+        return {
+          topTopics,
+          negativeDialogs,
+          followUpDialogs,
         };
       }),
 

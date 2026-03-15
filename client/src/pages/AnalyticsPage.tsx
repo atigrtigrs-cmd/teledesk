@@ -20,6 +20,9 @@ import {
   BarChart3,
   PieChart,
   Activity,
+  Sparkles,
+  AlertTriangle,
+  ArrowRightCircle,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -58,6 +61,7 @@ export default function AnalyticsPage() {
   const { data: dialogsByStatus } = trpc.analytics.dialogsByStatus.useQuery(queryParams);
   const { data: hourlyActivity } = trpc.analytics.hourlyActivity.useQuery(queryParams);
   const { data: newDialogsByDay } = trpc.analytics.newDialogsByDay.useQuery(queryParams);
+  const { data: aiInsights } = trpc.analytics.aiInsights.useQuery(queryParams);
 
   // Derived metrics
   const totalSent = useMemo(() => accountStats?.stats?.reduce((s, a) => s + a.sent, 0) ?? 0, [accountStats]);
@@ -336,6 +340,74 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* AI Insights */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <CardTitle className="text-sm font-semibold">Топ тем</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {aiInsights?.topTopics?.length ? aiInsights.topTopics.map((item) => (
+                <div key={item.topic} className="flex items-center justify-between gap-3 rounded-lg bg-muted/20 px-3 py-2">
+                  <span className="text-sm">{item.topic}</span>
+                  <span className="text-xs font-semibold text-muted-foreground">{item.count}</span>
+                </div>
+              )) : (
+                <div className="text-sm text-muted-foreground">Нет AI-анализа за выбранный период</div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-400" />
+                <CardTitle className="text-sm font-semibold">Негативные диалоги</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {aiInsights?.negativeDialogs?.length ? aiInsights.negativeDialogs.map((item) => (
+                <div key={item.dialogId} className="rounded-lg border border-red-500/15 bg-red-500/5 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium truncate">{item.contactName}</span>
+                    <span className="text-[11px] text-muted-foreground shrink-0">{item.accountUsername}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground line-clamp-3">{item.summary}</p>
+                </div>
+              )) : (
+                <div className="text-sm text-muted-foreground">Негативных диалогов не найдено</div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card border-border">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <ArrowRightCircle className="h-4 w-4 text-amber-400" />
+                <CardTitle className="text-sm font-semibold">Нужен follow-up</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {aiInsights?.followUpDialogs?.length ? aiInsights.followUpDialogs.map((item) => (
+                <div key={item.dialogId} className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium truncate">{item.contactName}</span>
+                    <span className="text-[11px] text-muted-foreground shrink-0">{item.accountUsername}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                    {item.nextStep || item.summary}
+                  </p>
+                </div>
+              )) : (
+                <div className="text-sm text-muted-foreground">Нет диалогов для follow-up</div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
