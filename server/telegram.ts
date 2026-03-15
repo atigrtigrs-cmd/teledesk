@@ -62,6 +62,60 @@ const connectingAccounts = new Set<number>();
 // Flag to track if restoreAllSessions is currently running
 let isRestoringAllSessions = false;
 
+// ─── Deploy lifecycle state (ТЗ points 2, 3, 5) ────────────────────────────
+
+/** P2: Shared shutdown flag — all functions check before acting */
+let isShuttingDown = false;
+
+/** P3: Cooldown map — accountId → timestamp when cooldown expires */
+const connectionCooldown = new Map<number, number>();
+
+const COOLDOWN_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+
+function isInCooldown(accountId: number): boolean {
+  const until = connectionCooldown.get(accountId);
+  if (!until) return false;
+  if (Date.now() >= until) {
+    connectionCooldown.delete(accountId);
+    return false;
+  }
+  return true;
+}
+
+function setCooldown(accountId: number, durationMs: number = COOLDOWN_DURATION_MS): void {
+  connectionCooldown.set(accountId, Date.now() + durationMs);
+  console.log(`[Telegram] Account #${accountId} in cooldown until ${new Date(Date.now() + durationMs).toISOString()}`);
+}
+
+/** P5: Anti-thrashing guard — lastSyncAttemptAt per account */
+const lastSyncAttemptAt = new Map<number, number>();
+const MIN_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes between auto-syncs
+
+function canAutoSync(accountId: number): boolean {
+  const lastAttempt = lastSyncAttemptAt.get(accountId);
+  if (!lastAttempt) return true;
+  return Date.now() - lastAttempt >= MIN_SYNC_INTERVAL_MS;
+}
+
+function markSyncAttempt(accountId: number): void {
+  lastSyncAttemptAt.set(accountId, Date.now());
+}
+
+/** P2: Check if shutdown is in progress */
+export function getIsShuttingDown(): boolean {
+  return isShuttingDown;
+}
+
+/** P3: Check if account is in cooldown */
+export function getIsInCooldown(accountId: number): boolean {
+  return isInCooldown(accountId);
+}
+
+/** P5: Check if account can auto-sync */
+export function getCanAutoSync(accountId: number): boolean {
+  return canAutoSync(accountId);
+}
+
 // ─── QR Login Flow ───────────────────────────────────────────────────────────
 
 type PendingQRSession = {
@@ -192,6 +246,11 @@ export function getQRLoginStatus(accountId: number): { pending: boolean; needsPa
 // ─── Restore all active sessions on server start ─────────────────────────────
 
 export async function restoreAllSessions(): Promise<void> {
+  // P2: Don't restore during shutdown
+  if (isShuttingDown) {
+    console.log("[Telegram] restoreAllSessions skipped — shutdown in progress");
+    return;
+  }
   // Prevent parallel runs — only one restore at a time
   if (isRestoringAllSessions) {
     console.log("[Telegram] restoreAllSessions already running, skipping");
@@ -271,6 +330,16 @@ export async function restoreAllSessions(): Promise<void> {
 // ─── Connect account with existing session ───────────────────────────────────
 
 export async function connectAccount(accountId: number, sessionString: string): Promise<void> {
+  // P2: Don't connect during shutdown
+  if (isShuttingDown) {
+    console.log(`[Telegram] connectAccount #${accountId} skipped — shutdown in progress`);
+    return;
+  }
+  // P3: Don't connect if in cooldown
+  if (isInCooldown(accountId)) {
+    console.log(`[Telegram] connectAccount #${accountId} skipped — in cooldown until ${new Date(connectionCooldown.get(accountId)!).toISOString()}`);
+    return;
+  }
   // Prevent parallel connection attempts for the same account
   if (connectingAccounts.has(accountId)) {
     throw new Error(`Account #${accountId} is already being connected`);
@@ -300,6 +369,8 @@ export async function connectAccount(accountId: number, sessionString: string): 
     const msg = String(err?.message ?? err ?? "");
     if (msg.includes("AUTH_KEY_DUPLICATED")) {
       console.error(`[Telegram] Account #${accountId} AUTH_KEY_DUPLICATED — session DEAD. Clearing session.`);
+      // P3: Set cooldown to prevent retry spam
+      setCooldown(accountId);
       const db2 = await getDb();
       await db2?.update(telegramAccounts)
         .set({
@@ -327,27 +398,83 @@ export async function disconnectAccount(accountId: number): Promise<void> {
 }
 
 /**
- * Gracefully disconnect ALL active MTProto clients.
- * Call this on SIGTERM so Telegram releases sessions immediately.
+ * P1: Unified graceful shutdown.
+ * Sets isShuttingDown flag, then disconnects all MTProto clients with timeout.
+ * Call this ONCE from index.ts on SIGTERM/SIGINT.
  */
-export async function disconnectAll(): Promise<void> {
+export async function shutdownTelegram(): Promise<void> {
+  if (isShuttingDown) {
+    console.log("[Telegram] shutdownTelegram: already shutting down, skipping");
+    return;
+  }
+  isShuttingDown = true;
+  console.log("[Telegram] ━━━ SHUTDOWN STARTED ━━━");
+  console.log(`[Telegram] isShuttingDown = true`);
+
+  // Step 1: Block new operations (flag is already set)
+  console.log(`[Telegram] New restore/reconnect/sync operations blocked`);
+
+  // Step 2: Disconnect all active clients with 10s timeout
   const ids = Array.from(activeClients.keys());
-  console.log(`[Telegram] disconnectAll: disconnecting ${ids.length} clients...`);
-  await Promise.allSettled(
-    ids.map(async (id) => {
-      try {
-        const client = activeClients.get(id);
-        if (client) {
-          await client.disconnect();
-          activeClients.delete(id);
-          console.log(`[Telegram] disconnectAll: account #${id} disconnected`);
+  console.log(`[Telegram] Disconnecting ${ids.length} clients: [${ids.join(", ")}]`);
+
+  const DISCONNECT_TIMEOUT_MS = 10_000;
+  await Promise.race([
+    Promise.allSettled(
+      ids.map(async (id) => {
+        try {
+          const client = activeClients.get(id);
+          if (client) {
+            await client.disconnect();
+            activeClients.delete(id);
+            console.log(`[Telegram] Account #${id} disconnected`);
+          }
+        } catch (err) {
+          console.error(`[Telegram] Error disconnecting account #${id}:`, err);
+          activeClients.delete(id); // remove even on error
         }
-      } catch (err) {
-        console.error(`[Telegram] disconnectAll: error disconnecting account #${id}:`, err);
+      })
+    ),
+    new Promise(r => setTimeout(r, DISCONNECT_TIMEOUT_MS)),
+  ]);
+
+  // Step 3: Update DB statuses (best-effort, don't block exit)
+  try {
+    const db = await getDb();
+    if (db && ids.length > 0) {
+      for (const id of ids) {
+        await db.update(telegramAccounts)
+          .set({ status: "disconnected" })
+          .where(eq(telegramAccounts.id, id))
+          .catch(() => {});
       }
-    })
-  );
-  console.log(`[Telegram] disconnectAll: done`);
+    }
+  } catch {}
+
+  console.log("[Telegram] ━━━ SHUTDOWN COMPLETE ━━━");
+}
+
+/** Alias for backward compatibility */
+export const disconnectAll = shutdownTelegram;
+
+/**
+ * P6: Reset stale syncStatus='syncing' on startup.
+ * Call this before restoreAllSessions to clean up after crashes.
+ */
+export async function cleanupStaleSyncStatuses(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const stale = await db.select({ id: telegramAccounts.id, username: telegramAccounts.username })
+    .from(telegramAccounts)
+    .where(eq(telegramAccounts.syncStatus, "syncing"));
+  if (stale.length > 0) {
+    console.log(`[Telegram] P6: Resetting ${stale.length} stale syncStatus='syncing' accounts: [${stale.map(a => `#${a.id} @${a.username}`).join(", ")}]`);
+    await db.update(telegramAccounts)
+      .set({ syncStatus: "idle" })
+      .where(eq(telegramAccounts.syncStatus, "syncing"));
+  } else {
+    console.log("[Telegram] P6: No stale syncStatus='syncing' found");
+  }
 }
 
 // ─── Save session and start message listener ─────────────────────────────────
@@ -422,6 +549,19 @@ function extractPeerInfo(msg: any): { peerId: string; peerType: "user" | "group"
 // ─── Full History Sync ────────────────────────────────────────────────────────
 
 export async function syncAccountHistory(accountId: number, clientArg?: TelegramClient): Promise<void> {
+  // P2: Don't sync during shutdown
+  if (isShuttingDown) {
+    console.log(`[Sync] syncAccountHistory #${accountId} skipped — shutdown in progress`);
+    return;
+  }
+  // P3: Don't sync if in cooldown
+  if (isInCooldown(accountId)) {
+    console.log(`[Sync] syncAccountHistory #${accountId} skipped — in cooldown`);
+    return;
+  }
+  // P5: Anti-thrashing guard
+  markSyncAttempt(accountId);
+
   const db = await getDb();
   if (!db) return;
 
@@ -1178,6 +1318,8 @@ export function getActiveAccountIds(): number[] {
 // to prevent Render's idle connection timeout from dropping sessions.
 
 export async function keepAliveAll(): Promise<void> {
+  // P2: Don't keepalive during shutdown
+  if (isShuttingDown) return;
   const db = await getDb();
   for (const [accountId, client] of Array.from(activeClients.entries())) {
     try {
@@ -1189,7 +1331,9 @@ export async function keepAliveAll(): Promise<void> {
         // Session is valid but used by another instance — remove from active map
         // so the watchdog will reconnect it properly
         activeClients.delete(accountId);
-        console.warn(`[KeepAlive] Account #${accountId} AUTH_KEY_DUPLICATED — removed from active map, watchdog will reconnect`);
+        // P3: Set cooldown to prevent retry spam
+        setCooldown(accountId);
+        console.warn(`[KeepAlive] Account #${accountId} AUTH_KEY_DUPLICATED — removed from active map + cooldown set`);
       } else {
         console.error(`[KeepAlive] Account #${accountId} ping failed:`, err);
         // Remove from active map so watchdog reconnects it
@@ -1213,6 +1357,10 @@ export async function keepAliveAll(): Promise<void> {
 // (e.g. old Render instance + new Render instance during deploy).
 
 export async function forceSyncAll(): Promise<{ synced: number; errors: number; accounts: { id: number; username: string | null; dialogs: number; error?: string }[] }> {
+  // P2: Don't force sync during shutdown
+  if (isShuttingDown) {
+    return { synced: 0, errors: 0, accounts: [] };
+  }
   const db = await getDb();
   if (!db) throw new Error("No database connection");
 

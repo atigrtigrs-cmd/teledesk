@@ -9,26 +9,34 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { sseHandler } from "../sse";
-import { disconnectAll } from "../telegram";
+import { shutdownTelegram } from "../telegram";
 
-// ─── Graceful shutdown: disconnect all Telegram MTProto clients on SIGTERM ───
-// Render sends SIGTERM before killing old instance during zero-downtime deploy.
-// We MUST disconnect all MTProto clients so Telegram releases the auth_key,
-// otherwise the new instance gets AUTH_KEY_DUPLICATED (406) and the session dies.
+// Reference to worker module (loaded dynamically in production)
+let workerModule: { shutdownWorker: () => void } | null = null;
+
+// ─── P1: Unified graceful shutdown coordinator ──────────────────────────────
+// Single SIGTERM/SIGINT handler. Sequence:
+//   1. Stop worker intervals (no new reconnects/syncs scheduled)
+//   2. Disconnect all MTProto clients via telegram.ts (sets isShuttingDown flag)
+//   3. Exit process
 let isShuttingDown = false;
 async function gracefulShutdown(signal: string) {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  console.log(`[Server] ${signal} received — disconnecting all Telegram clients...`);
+  console.log(`[Server] ━━━ ${signal} received ━━━`);
+  console.log(`[Server] Step 1: Stopping worker intervals...`);
   try {
-    await Promise.race([
-      disconnectAll(),
-      new Promise(r => setTimeout(r, 10_000)), // max 10s for disconnect
-    ]);
-    console.log(`[Server] Telegram clients disconnected. Exiting.`);
+    workerModule?.shutdownWorker();
   } catch (err) {
-    console.error(`[Server] Error during graceful shutdown:`, err);
+    console.error("[Server] Error stopping worker:", err);
   }
+  console.log(`[Server] Step 2: Disconnecting all Telegram clients...`);
+  try {
+    await shutdownTelegram();
+  } catch (err) {
+    console.error("[Server] Error during Telegram shutdown:", err);
+  }
+  console.log(`[Server] Step 3: Exiting process.`);
   process.exit(0);
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
@@ -103,6 +111,7 @@ async function startServer() {
     // (separate background workers get different IPs on each deploy)
     if (process.env.NODE_ENV !== "development") {
       import("../worker").then((mod) => {
+        workerModule = mod;
         mod.startWorker().catch((err: any) => {
           console.error("[Worker] Failed to start:", err);
         });

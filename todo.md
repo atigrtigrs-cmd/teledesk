@@ -466,3 +466,14 @@
 - [x] SEC-7: Rate limiting on API (express-rate-limit, 120 req/min per IP)
 - [x] CLEANUP: Removed 8 dead pages (AutoReplies, ComponentShowcase, Dashboard, DialogDetail, Inbox, QuickReplies, Analytics, Settings)
 - [x] TEST: 29 new vitest tests for audit fixes (total: 56 tests, all passing)
+
+## Fix Deploy/Sync Lifecycle (Mar 15, 2026 — from ТЗ)
+- [x] P1: Unified graceful shutdown coordinator (remove competing SIGTERM handlers, single shutdown flow)
+- [x] P2: Shared isShuttingDown flag — all worker functions check before acting
+- [x] P3: Fix cooldown after AUTH_KEY_DUPLICATED — setCooldown() in connectAccount catch
+- [x] P4: Configurable startup delay via WORKER_STARTUP_DELAY_MS env (default 15s, configurable)
+- [x] P5: Anti-thrashing guard — lastSyncAttemptAt per account, min 5 min between auto-syncs
+- [x] P6: Consistent account statuses — reset stale syncStatus='syncing' on startup
+- [x] P7: Diagnostic logs for full deploy lifecycle (shutdown, startup, cooldown, sync skip reasons)
+- [x] Refactor: worker.ts rewritten as thin orchestrator (no own TelegramClient/activeClients)
+- [x] Tests: 17 new tests for deploy lifecycle (73 total, all passing)
