@@ -593,14 +593,29 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         const { dialogId, cursor, limit } = input;
-        // Cursor-based: load `limit` messages BEFORE the cursor (older messages)
-        // If no cursor, load the latest `limit` messages
-        const conditions = cursor
-          ? and(eq(messages.dialogId, dialogId), sql`${messages.id} < ${cursor}`)
-          : eq(messages.dialogId, dialogId);
+        // Order/paginate by real message time first, not insert order.
+        // Imported history may have newer DB ids but older createdAt values.
+        let conditions = eq(messages.dialogId, dialogId);
+        if (cursor) {
+          const [cursorRow] = await db.select({
+            id: messages.id,
+            createdAt: messages.createdAt,
+          }).from(messages).where(eq(messages.id, cursor)).limit(1);
+
+          if (cursorRow) {
+            conditions = and(
+              eq(messages.dialogId, dialogId),
+              sql`(
+                ${messages.createdAt} < ${cursorRow.createdAt}
+                OR (${messages.createdAt} = ${cursorRow.createdAt} AND ${messages.id} < ${cursorRow.id})
+              )`
+            )!;
+          }
+        }
+
         const rows = await db.select().from(messages)
           .where(conditions)
-          .orderBy(desc(messages.id))
+          .orderBy(desc(messages.createdAt), desc(messages.id))
           .limit(limit + 1); // fetch one extra to check if there are more
         const hasMore = rows.length > limit;
         if (hasMore) rows.pop();
