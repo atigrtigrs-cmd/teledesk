@@ -50,6 +50,36 @@ function normalizeTopicToken(value: string | null | undefined) {
     .replace(/[.;:]+$/g, "");
 }
 
+const TOPIC_RULES: { topic: string; keywords: string[] }[] = [
+  { topic: "Google Ads", keywords: ["google ads", "adwords", "ga ", "g ads"] },
+  { topic: "Facebook Ads", keywords: ["facebook", "fb ads", "meta ads", "meta "] },
+  { topic: "Аккаунты", keywords: ["аккаунт", "акк", "логин", "войти", "авториза", "вериф", "бан"] },
+  { topic: "Офферы", keywords: ["оффер", "offer", "affise", "рекл", "advertiser"] },
+  { topic: "Выплаты", keywords: ["выплат", "деп", "ставк", "платеж", "баланс", "hold"] },
+  { topic: "Трафик", keywords: ["трафик", "источник", "source", "fb", "google", "web2app", "витрин"] },
+  { topic: "Telegram", keywords: ["telegram", "тг", "qr", "код", "premium", "mtproto"] },
+  { topic: "Интеграции", keywords: ["bitrix", "crm", "api", "вебхук", "webhook", "интеграц"] },
+  { topic: "Креативы", keywords: ["креатив", "баннер", "ленд", "преленд", "promo"] },
+  { topic: "Модерация", keywords: ["аппрув", "модерац", "провер", "валид", "quality"] },
+];
+
+function collectRuleBasedTopics(texts: Array<string | null | undefined>, limit = 3) {
+  const haystack = texts
+    .filter(Boolean)
+    .join(" \n ")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  const matches: string[] = [];
+  for (const rule of TOPIC_RULES) {
+    if (rule.keywords.some((keyword) => haystack.includes(keyword))) {
+      matches.push(rule.topic);
+    }
+    if (matches.length >= limit) break;
+  }
+  return matches;
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -418,6 +448,49 @@ export const appRouter = router({
 
   // ─── Dialogs ────────────────────────────────────────────────────────────────
   dialogs: router({
+    facets: protectedProcedure
+      .input(z.object({
+        assigneeId: z.number().optional(),
+        search: z.string().optional(),
+        tagId: z.number().optional(),
+        telegramAccountId: z.number().optional(),
+        hideGroups: z.boolean().optional().default(false),
+      }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        const conds: any[] = [];
+        if (input.assigneeId) conds.push(eq(dialogs.assigneeId, input.assigneeId));
+        if (input.telegramAccountId) conds.push(eq(dialogs.telegramAccountId, input.telegramAccountId));
+        if (input.tagId) conds.push(sql`${dialogs.id} IN (SELECT dialogId FROM dialog_tags WHERE tagId = ${input.tagId})`);
+        if (input.search) {
+          const q = `%${input.search}%`;
+          conds.push(sql`(${contacts.firstName} LIKE ${q} OR ${contacts.lastName} LIKE ${q} OR ${contacts.username} LIKE ${q})`);
+        }
+        if (input.hideGroups) {
+          conds.push(sql`${contacts.telegramId} NOT LIKE 'group_%' AND ${contacts.telegramId} NOT LIKE 'channel_%'`);
+        }
+
+        const totalRows = await db
+          .select({ count: count(dialogs.id) })
+          .from(dialogs)
+          .leftJoin(contacts, eq(dialogs.contactId, contacts.id))
+          .where(conds.length > 0 ? and(...conds) : undefined);
+
+        const statusRows = await db
+          .select({ status: dialogs.status, count: count(dialogs.id) })
+          .from(dialogs)
+          .leftJoin(contacts, eq(dialogs.contactId, contacts.id))
+          .where(conds.length > 0 ? and(...conds) : undefined)
+          .groupBy(dialogs.status);
+
+        return {
+          total: totalRows[0]?.count ?? 0,
+          byStatus: Object.fromEntries(statusRows.map((row) => [row.status, row.count])),
+        };
+      }),
+
     list: protectedProcedure
       .input(z.object({
         status: z.enum(["open", "in_progress", "waiting", "needs_reply", "resolved", "closed", "archived", "all"]).optional().default("all"),
@@ -574,6 +647,13 @@ export const appRouter = router({
         const firstAt = normalizedMsgs[0]?.createdAt ? new Date(normalizedMsgs[0].createdAt).toISOString() : "";
         const lastAt = normalizedMsgs[normalizedMsgs.length - 1]?.createdAt ? new Date(normalizedMsgs[normalizedMsgs.length - 1].createdAt).toISOString() : "";
         const omittedCount = Math.max(normalizedMsgs.length - firstMessages.length - recentMessages.length, 0);
+        const heuristicTopics = collectRuleBasedTopics(
+          [
+            ...recentMessages.map((m) => m.text),
+            ...firstMessages.map((m) => m.text),
+          ],
+          3
+        );
         const conversationBrief = [
           `Всего сообщений: ${normalizedMsgs.length}`,
           `Сообщений клиента: ${incomingCount}`,
@@ -599,9 +679,13 @@ export const appRouter = router({
 - tags: 1-3 коротких бизнес-тега на русском.
 - keyTopics: перечисли через запятую до 3 конкретных тем диалога, максимум 90 символов.
 - recommendation: одно четкое следующее действие менеджера, максимум 120 символов.
+- если темы очевидны из переписки или из подсказки ниже, используй короткие и повторяемые формулировки.
 
 Служебная сводка:
 ${conversationBrief}
+
+Предварительные темы по ключевым словам:
+${heuristicTopics.length ? heuristicTopics.join(", ") : "не определены"}
 
 Начало диалога:
 ${openingWindow || "—"}
@@ -637,10 +721,14 @@ ${recentWindow || "—"}`
           result = typeof content === "string" ? JSON.parse(content) : content;
         } catch {}
 
+        const finalTopics = result.keyTopics
+          ? result.keyTopics
+          : heuristicTopics.join(", ");
+
         // Build a rich note combining all AI insights
         const aiNote = [
           result.summary ? `Резюме: ${compactAiText(result.summary, 220)}` : "",
-          result.keyTopics ? `Темы: ${compactAiText(result.keyTopics, 90)}` : "",
+          finalTopics ? `Темы: ${compactAiText(finalTopics, 90)}` : "",
           result.recommendation ? `Следующий шаг: ${compactAiText(result.recommendation, 120)}` : "",
         ].filter(Boolean).join("\n");
 
@@ -1323,7 +1411,12 @@ ${recentWindow || "—"}`
           else if (input.period === "month") since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         }
 
-        const conds: any[] = [sql`${dialogs.aiSummary} IS NOT NULL AND ${dialogs.aiSummary} != ''`];
+        const conds: any[] = [
+          sql`(
+            (${dialogs.aiSummary} IS NOT NULL AND ${dialogs.aiSummary} != '')
+            OR (${dialogs.lastMessageText} IS NOT NULL AND ${dialogs.lastMessageText} != '')
+          )`,
+        ];
         if (since) conds.push(gte(dialogs.lastMessageAt, since));
         if (until) conds.push(sql`${dialogs.lastMessageAt} <= ${until}`);
 
@@ -1356,11 +1449,16 @@ ${recentWindow || "—"}`
             "Неизвестный";
           const topicsText = extractAiField(row.aiSummary, "Темы");
           const nextStep = extractAiField(row.aiSummary, "Следующий шаг");
-          const topics = topicsText
+          const topics = (topicsText
             .split(/[,\n|]/)
             .map((topic) => normalizeTopicToken(topic))
             .filter(Boolean)
-            .slice(0, 6);
+            .slice(0, 6));
+          const fallbackTopics = collectRuleBasedTopics([
+            row.lastMessageText,
+            row.aiSummary,
+          ], 3);
+          const resolvedTopics = topics.length ? topics : fallbackTopics;
 
           const accountLabel = row.accountUsername ? `@${row.accountUsername}` : "Без аккаунта";
           if (!accountTopicCounts.has(accountLabel)) {
@@ -1368,7 +1466,7 @@ ${recentWindow || "—"}`
           }
           const perAccountCounts = accountTopicCounts.get(accountLabel)!;
 
-          for (const topic of topics) {
+          for (const topic of resolvedTopics) {
             topicCounts.set(topic, (topicCounts.get(topic) ?? 0) + 1);
             perAccountCounts.set(topic, (perAccountCounts.get(topic) ?? 0) + 1);
           }
@@ -1383,7 +1481,7 @@ ${recentWindow || "—"}`
             lastMessageText: row.lastMessageText,
             summary: extractAiField(row.aiSummary, "Резюме") || row.aiSummary || "",
             nextStep,
-            topics,
+            topics: resolvedTopics,
           };
         });
 

@@ -266,6 +266,16 @@ export default function Messages() {
     },
     { refetchInterval: 30_000 }
   );
+  const { data: dialogFacets } = trpc.dialogs.facets.useQuery(
+    {
+      search: search || undefined,
+      telegramAccountId: selectedAccountId,
+      assigneeId: selectedAssigneeId,
+      tagId: selectedTagId,
+      hideGroups,
+    },
+    { refetchInterval: 30_000 }
+  );
 
   // Sync
   const syncAll = trpc.accounts.syncAll.useMutation({
@@ -278,6 +288,8 @@ export default function Messages() {
       {/* ── Column 1: Dialog List ── */}
       <DialogList
         dialogs={dialogsData ?? []}
+        totalDialogs={dialogFacets?.total ?? dialogsData?.length ?? 0}
+        statusCountsFromServer={dialogFacets?.byStatus}
         loading={dialogsLoading}
         selectedId={selectedDialogId}
         onSelect={(id) => { setSelectedDialogId(id); setShowContactPanel(false); }}
@@ -374,6 +386,8 @@ export default function Messages() {
 // ═══════════════════════════════════════════════════════════════════════════════
 function DialogList({
   dialogs,
+  totalDialogs,
+  statusCountsFromServer,
   loading,
   selectedId,
   onSelect,
@@ -400,6 +414,8 @@ function DialogList({
   width,
 }: {
   dialogs: any[];
+  totalDialogs: number;
+  statusCountsFromServer?: Record<string, number>;
   loading: boolean;
   selectedId: number | null;
   onSelect: (id: number) => void;
@@ -439,18 +455,16 @@ function DialogList({
     : "Все аккаунты";
   const statusCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    counts.set("all", dialogs.length);
-    for (const item of dialogs) {
-      const key = item?.dialog?.status ?? "unknown";
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+    counts.set("all", totalDialogs);
+    for (const [status, value] of Object.entries(statusCountsFromServer ?? {})) {
+      counts.set(status, value);
     }
     return counts;
-  }, [dialogs]);
+  }, [statusCountsFromServer, totalDialogs]);
   const filterSummary = [
     selectedAccountId ? selectedAccountLabel : null,
     selectedAssigneeId ? `Менеджер` : null,
     selectedTagId ? `Тег` : null,
-    hideGroups ? "Личные" : null,
   ].filter(Boolean) as string[];
 
   return (
@@ -461,7 +475,8 @@ function DialogList({
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-bold">Сообщения</h2>
             <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-              {dialogs.length} в списке{filterSummary.length ? ` · ${filterSummary.join(" · ")}` : ""}
+              {dialogs.length === totalDialogs ? `${totalDialogs} в списке` : `Показано ${dialogs.length} из ${totalDialogs}`}
+              {filterSummary.length ? ` · ${filterSummary.join(" · ")}` : ""}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
