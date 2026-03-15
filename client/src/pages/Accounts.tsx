@@ -82,6 +82,7 @@ export default function Accounts() {
 
   // QR state
   const [pendingAccountId, setPendingAccountId] = useState<number | null>(null);
+  const [reconnectAccountId, setReconnectAccountId] = useState<number | null>(null);
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [qrExpires, setQrExpires] = useState<number | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
@@ -227,12 +228,12 @@ export default function Accounts() {
 
   // Start QR when pendingAccountId set
   useEffect(() => {
-    if (pendingAccountId !== null) {
+    if (pendingAccountId !== null && loginMode === "qr") {
       setQrLoading(true);
       setQrToken(null);
       startQRMutation.mutate({ accountId: pendingAccountId });
     }
-  }, [pendingAccountId]);
+  }, [pendingAccountId, loginMode]);
 
   // QR expiry timer
   useEffect(() => {
@@ -266,7 +267,18 @@ export default function Accounts() {
     setShowDialog(true);
     setLoginMode("choose");
     resetPhoneState();
+    setReconnectAccountId(null);
     setPendingAccountId(null);
+    setQrToken(null);
+    setQrExpired(false);
+  };
+
+  const handleReconnectAccount = (accountId: number) => {
+    setShowDialog(true);
+    setLoginMode("choose");
+    resetPhoneState();
+    setReconnectAccountId(accountId);
+    setPendingAccountId(accountId);
     setQrToken(null);
     setQrExpired(false);
   };
@@ -275,6 +287,7 @@ export default function Accounts() {
     setShowDialog(false);
     setLoginMode("choose");
     resetPhoneState();
+    setReconnectAccountId(null);
     setPendingAccountId(null);
     setQrToken(null);
     setQrExpired(false);
@@ -294,6 +307,10 @@ export default function Accounts() {
 
   const handleStartQR = () => {
     setLoginMode("qr");
+    if (reconnectAccountId) {
+      setPendingAccountId(reconnectAccountId);
+      return;
+    }
     createMutation.mutate({ status: "pending" });
   };
 
@@ -314,6 +331,11 @@ export default function Accounts() {
     if (!phoneNumber.trim()) return;
     // Create account first if not yet created
     if (!phoneAccountId) {
+      if (reconnectAccountId) {
+        setPhoneAccountId(reconnectAccountId);
+        sendCodeMutation.mutate({ accountId: reconnectAccountId, phone: phoneNumber });
+        return;
+      }
       createMutation.mutate(
         { phone: phoneNumber, status: "pending" },
         {
@@ -488,7 +510,7 @@ export default function Accounts() {
                             </DropdownMenuItem>
                           )}
                           {acc.status === "disconnected" && (
-                            <DropdownMenuItem onClick={() => updateStatusMutation.mutate({ id: acc.id, status: "active" })}>
+                            <DropdownMenuItem onClick={() => handleReconnectAccount(acc.id)}>
                               <RefreshCw className="mr-2 h-4 w-4" />
                               Переподключить
                             </DropdownMenuItem>
@@ -553,11 +575,7 @@ export default function Accounts() {
                       <span className="flex-1">{(acc as any).lastError}</span>
                       {String((acc as any).lastError).includes("AUTH_KEY_DUPLICATED") && (
                         <button
-                          onClick={() => {
-                            setPendingAccountId(acc.id);
-                            setLoginMode("choose");
-                            setShowDialog(true);
-                          }}
+                          onClick={() => handleReconnectAccount(acc.id)}
                           className="ml-auto text-[10px] font-semibold underline underline-offset-2 opacity-80 hover:opacity-100 text-primary shrink-0"
                         >
                           Переподключить
@@ -823,7 +841,11 @@ export default function Accounts() {
                   </Button>
                   <Button
                     className="flex-1 font-bold"
-                    onClick={() => connectSessionMutation.mutate({ sessionString, phone: sessionPhone || undefined })}
+                    onClick={() => connectSessionMutation.mutate({
+                      accountId: reconnectAccountId || undefined,
+                      sessionString,
+                      phone: sessionPhone || undefined,
+                    })}
                     disabled={connectSessionMutation.isPending || sessionString.trim().length < 10}
                   >
                     {connectSessionMutation.isPending ? (

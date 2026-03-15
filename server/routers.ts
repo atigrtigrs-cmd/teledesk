@@ -322,6 +322,7 @@ export const appRouter = router({
 
     connectSessionString: adminProcedure
       .input(z.object({
+        accountId: z.number().optional(),
         sessionString: z.string().min(10).max(5000),
         phone: z.string().max(20).optional(),
         firstName: z.string().max(100).optional(),
@@ -330,15 +331,29 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         try {
-          // Create account record with session string
-          await db.insert(telegramAccounts).values({
-            phone: input.phone ?? "",
-            firstName: input.firstName ?? null,
-            status: "pending",
-            sessionString: input.sessionString,
-            ownerId: ctx.user.id,
-          });
-          const [acc] = await db.select().from(telegramAccounts).orderBy(desc(telegramAccounts.id)).limit(1);
+          let accountId = input.accountId;
+
+          if (accountId) {
+            await db.update(telegramAccounts).set({
+              phone: input.phone ?? "",
+              firstName: input.firstName ?? null,
+              status: "pending",
+              sessionString: input.sessionString,
+              lastError: null,
+            }).where(eq(telegramAccounts.id, accountId));
+          } else {
+            await db.insert(telegramAccounts).values({
+              phone: input.phone ?? "",
+              firstName: input.firstName ?? null,
+              status: "pending",
+              sessionString: input.sessionString,
+              ownerId: ctx.user.id,
+            });
+            const [acc] = await db.select().from(telegramAccounts).orderBy(desc(telegramAccounts.id)).limit(1);
+            accountId = acc.id;
+          }
+
+          const [acc] = await db.select().from(telegramAccounts).where(eq(telegramAccounts.id, accountId!)).limit(1);
           // Connect using the session string
           await connectAccount(acc.id, input.sessionString);
           return { success: true, accountId: acc.id };
